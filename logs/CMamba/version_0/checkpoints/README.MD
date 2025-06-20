@@ -7,11 +7,3 @@ LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES. [0]
 Loaded model weights from the checkpoint at logs/CMamba/version_0/checkpoints/epoch967-val-rmse46.1179.ckpt 
 350 data points loaded as test split.
 Testing DataLoader 0: 100% 11/11 [00:00<00:00, 52.75it/s] 
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ 
-┃        Test metric        ┃       DataLoader 0        ┃ 
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩ 
-│         test/mae          │ 69. 83438110351562        │ 
-│ test/mape                 │ 0.024765657261013985      │ 
-│ test/mse                  │ 10060.7314453125          │ 
-│ test/rmse                 │ 98.6056137084961          │
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩ 
