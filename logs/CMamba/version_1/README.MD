@@ -8,6 +8,7 @@
 1. **ETH_Dataset_daily.csv**：包含以太坊（ETH）的完整历史数据，原始格式，未经处理。  
    来源：[Yahoo Finance ETH-USD 历史数据](https://finance.yahoo.com/quote/ETH-USD/history/)
 2. **mode_1.yaml**：数据配置文件，位于 `configs/data_configs/mode_1.yaml`。
+   注意：jumps = 86400；未指定windows_size
 
 训练完成后，以下文件将生成在 `data/2018-09-17_2024-09-16_86400` 目录中：
 - `config.pkl`
