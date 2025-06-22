@@ -28,12 +28,12 @@ ETH_Dataset_daily.csv 应与 one_day_pred.csv 保持一致。
 
 ## 训练后模型
 
-1. **训练模型**：位于 `logs/CMamba/version_1/checkpoints/epoch932-val-rmse46.8029.ckpt`。  
-2. **最后保存的模型**（不一定是最终模型）：位于 `logs/CMamba/version_1/checkpoints/last.ckpt`。
+1. **训练模型**：位于 `logs/CMamba/version_0/checkpoints/epoch967-val-rmse46.1179.ckpt`。  
+2. **最后保存的模型**（不一定是最终模型）：位于 `logs/CMamba/version_0/checkpoints/last.ckpt`。
 
 ## 预测步骤
 
-1. 将模型检查点 `logs/CMamba/version_1/checkpoints/epoch932-val-rmse46.8029.ckpt` 复制到 `./checkpoints` 目录，并重命名为 `cmamba_v.ckpt`。  
+1. 将模型检查点 `logs/CMamba/version_0/checkpoints/epoch967-val-rmse46.1179.ckpt` 复制到 `./checkpoints` 目录，并重命名为 `cmamba_v.ckpt`。  
 2. 从 [Yahoo Finance](https://finance.yahoo.com/quote/ETH-USD/history/) 下载预测日期前 15 天的以太坊历史数据，重命名为 `one_day_pred.csv`，并放置在 `./data` 目录中。
 
 ## 📈 Results
