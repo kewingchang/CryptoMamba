@@ -1,0 +1,23 @@
+logdir: null
+accelerator: gpu
+devices: 1
+seed: 23
+expname: Cmamba
+config: cmamba_v
+logger_type: tb
+num_workers: 4
+batch_size: 32
+save_checkpoints: true
+use_volume: true
+resume_from_checkpoint: null
+max_epochs: 1000
+data_config: mode_1
+model: CMamba_v2
+name: CMamba
+additional_features: []
+hyperparams:
+  optimizer: adam
+  lr: 0.01
+  lr_step_size: 100
+  lr_gamma: 0.5
+  weight_decay: 0.001
