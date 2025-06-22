@@ -11,7 +11,7 @@
    来源：[Yahoo Finance ETH-USD 历史数据](https://finance.yahoo.com/quote/ETH-USDdatasethistory/)。
 2. **mode_1.yaml**：数据配置文件，位于 `configs/data_configs/mode_1.yaml`。
 
-训练完成后，以下文件将生成于在 `data/2018-09-17_2024-09-16_86400` 目录中：
+训练完成后，以下文件将生成于在 `data/2018-09-17_2024-09-16_1440` 目录中：
 - `config.pkl`
 - `test.csv`
 - `train.csv`
@@ -21,11 +21,11 @@
 
 ETH_Dataset_daily.csv 应与 one_day_pred.csv 保持一致。  
 1. **ETH_Dataset_daily.csv**：原始数据，价格仅保留2位小数。  
-2. **one_day_pred.csv**：用于预测价格的文件也应为原始数据（保留2位小数）。。
+2. **one_day_pred.csv**：用于预测价格的文件也应为原始数据（保留2位小数）。
 
 ## 训练前准备工作
 
-1. 下载 `ETH_Dataset_daily.csv` 并放置在 `data` 目录中。  
+1. 下载 `ETH_Dataset_daily.csv`,数据预处理仅保留2位小时，放置在 `data` 目录中。  
 2. 根据需要修改配置文件 `configs/data_configs/mode_1.yaml`。
 
 ## 训练后模型
