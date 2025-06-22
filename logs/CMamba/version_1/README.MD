@@ -3,7 +3,7 @@
 ## 概述
 
 本项目采用与 `version_0` 相同的训练配置和数据，但训练结果略有不同（稍差）。  
-训练配置文件存储在 `config` 和 `data` 目录中。以下是关键文件的介绍：
+训练配置与数据文件存储在 `config & data` 目录中。以下是关键文件的介绍：
 
 1. **ETH_Dataset_daily.csv**：包含以太坊（ETH）的完整历史数据，原始格式，未经处理。  
    来源：[Yahoo Finance ETH-USD 历史数据](https://finance.yahoo.com/quote/ETH-USD/history/)
