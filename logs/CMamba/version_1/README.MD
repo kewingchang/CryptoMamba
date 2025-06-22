@@ -6,7 +6,7 @@
 1. ETH_Dataset_daily.csv 不完全相同。version_0 的 ETH_Dataset_daily.csv 仅包含训练日期范围内数据；version_1 包含全部数据。
 2. 模型本身不保证每次训练结果完全相同。
 
-训练配置文件存储在 `config` 和 `data` 目录中。以下是相关文件描述：
+训练配置文件存储在 `config & data` 子目录中。以下是相关文件描述：
 1. **ETH_Dataset_daily.csv**：包含以太坊（ETH）的完整历史数据，原始数据格式，未经处理。  
    来源：[Yahoo Finance ETH-USD 历史数据](https://finance.yahoo.com/quote/ETH-USDdatasethistory/)。
 2. **mode_1.yaml**：数据配置文件，位于 `configs/data_configs/mode_1.yaml`。
