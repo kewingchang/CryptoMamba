@@ -6,3 +6,4 @@
 2. **version_1**: 多小数位历史数据；jumps=86400；未指定 windows_size
 3. **version_2**: 2位小数历史数据；jumps=1440；window_size=14
 4. **version_3**: 多小数位历史数据；jumps=1440；window_size=14
+5. **version_4**: 2位小数历史数据；jumps=86400；未指定 windows_size
