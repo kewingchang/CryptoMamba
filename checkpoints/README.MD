@@ -2,9 +2,7 @@
 
 除BTC模型是原始项目模型外，其余都是训练得到的模型。
 
-## BTC_cmamba_v.ckpt
-
-[原始项目](https://github.com/MShahabSepehri/CryptoMamba)模型
+## BTC_cmamba_v.ckpt：[原始项目](https://github.com/MShahabSepehri/CryptoMamba)模型
 
 <div align="center">
 
@@ -14,9 +12,7 @@
 
 </div>
 
-## ETH_cmamba_v.ckpt
-
-[ETH分支Version_0](https://github.com/kewingchang/CryptoMamba/tree/ETH/logs/CMamba/version_0)模型
+## ETH_cmamba_v.ckpt：[ETH分支Version_0](https://github.com/kewingchang/CryptoMamba/tree/ETH/logs/CMamba/version_0)模型
 
 <div align="center">
 
