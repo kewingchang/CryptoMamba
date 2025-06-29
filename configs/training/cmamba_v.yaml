@@ -2,7 +2,7 @@ data_config: 'mode_1'
 model: 'CMamba_v2'
 
 name: 'CMamba'
-max_epochs: 2000
+max_epochs: 5000
 use_volume: True
 additional_features: []
 
