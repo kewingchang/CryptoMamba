@@ -1,4 +1,5 @@
-data_path: ./Dataset_daily.csv
+additional_features: ['Marketcap']
+data_path: ./data/BTC_Dataset_daily.csv
 end_date: '2024-16-09'
 jumps: 1440
 root: ./data
