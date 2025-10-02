@@ -1,7 +1,7 @@
 additional_features: ['Marketcap']
 data_path: ./data/BTC_Dataset_daily.csv
 end_date: '2024-16-09'
-jumps: 1440
+jumps: 86400
 root: ./data
 start_date: '2018-17-09'
 test_interval:
@@ -13,4 +13,3 @@ train_interval:
 val_interval:
 - '2022-17-09'
 - '2023-17-09'
-window_size: 14
