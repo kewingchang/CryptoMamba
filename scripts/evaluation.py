@@ -222,6 +222,16 @@ if __name__ == "__main__":
         all_targets += list(targets)
         txt = print_format.format(key, round(mse, 3), round(np.sqrt(mse), 3), round(mape, 5), round(l1, 3))
         print_and_write(f, txt)
+        # 
+        # 新加：计算方向准确率（只针对 Test）
+        if key == 'Test':
+            prev_targets = np.roll(targets, 1)[1:]  # 前一实际值，忽略首 NaN
+            prev_preds = np.roll(preds, 1)[1:]      # 前一预测值，忽略首 NaN
+            actual_directions = targets[1:] > prev_targets  # 实际涨跌 (True=涨)
+            pred_directions = preds[1:] > prev_preds        # 预测涨跌 (True=涨)
+            direction_acc = np.mean(actual_directions == pred_directions) * 100
+            print(f"Test Direction Accuracy: {direction_acc:.2f}%")
+        # 
         # plt.plot(timstamps, preds, color=c)
         sns.lineplot(x=timstamps, y=preds, color=c, linewidth=2.5, label=key)
 
