@@ -85,6 +85,7 @@ python3 scripts/training.py --config cmamba_v
 ### Evaluate Model
 
 To evaluate a model, run this command:
+
 ```
 python scripts/evaluation.py --config cmamba_v --ckpt_path ./checkpoints/ETH_cmamba_v.ckpt
 ```
