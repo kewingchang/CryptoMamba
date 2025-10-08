@@ -1,4 +1,4 @@
-<p align="center">
+<img width="71" height="8192" alt="image" src="https://github.com/user-attachments/assets/d25d70c1-4468-4795-a85c-48e183b64727" /><p align="center">
  <img src="assets/logo.png" alt="drawing" width="200" style="float: center;"/> 
 </p>
 
@@ -86,8 +86,7 @@ python3 scripts/training.py --config cmamba_v
 
 To evaluate a model, run this command:
 ```
-python scripts/evaluation.py --config CONFIG_NAME --ckpt_path PATH_TO_CHECKPOINT
-```
+!python scripts/evaluation.py --config cmamba_v --ckpt_path ./checkpoints/ETH_cmamba_v.ckpt```
 
 To run the trading simulation, you can use the following command:
 
