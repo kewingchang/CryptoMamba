@@ -5,4 +5,4 @@ params:
     d_states: 128
     layer_density: 4
     loss: 'rmse'
-normalize: False
+normalize: True
