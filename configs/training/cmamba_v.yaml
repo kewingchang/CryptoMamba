@@ -8,7 +8,7 @@ additional_features: ["RSI_14"]
 
 hyperparams:
     optimizer: 'adam'
-    lr: 0.001
-    lr_step_size: 50
+    lr: 0.01
+    lr_step_size: 100
     lr_gamma: 0.5
-    weight_decay: 0.005
+    weight_decay: 0.001
