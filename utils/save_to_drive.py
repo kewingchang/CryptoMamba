@@ -10,6 +10,7 @@ if __name__ == "__main__":
 
 	# 创建目录
 	os.makedirs(target_dir, exist_ok=True)
+	print(f"Created model dir: {target_dir}")
 
 	# 拷贝文件
 	source_dir = 'logs/CMamba/version_0/checkpoints'
