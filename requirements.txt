@@ -9,3 +9,4 @@ seaborn
 pandas
 einops
 tensorboard
+mamba-ssm[causal-conv1d]
