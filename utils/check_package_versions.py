@@ -8,7 +8,6 @@ packages = {
     'datasets': '4.0.0',
     'fsspec': '2025.3.0',
     'numpy': '2.0.2',
-    'tensorflow': '2.19.0',
     'gcsfs': '2025.3.0',
     'numba': '0.60.0'
 }
