@@ -141,6 +141,17 @@ if __name__ == "__main__":
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # 固定 CUBLAS 配置
     torch.set_float32_matmul_precision('high')  # 禁用 TF32，使用高精度
 
+    # 额外：A100 特定禁用 TF32 (冗余，确保 cuDNN/matmul 不启用)
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+
+    # 冗余种子设置 (确保 GPU 一致)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+
+    # 禁用 cuDNN
+    torch.backends.cudnn.enabled = False
+
     logdir = args.logdir
 
     config = io_tools.load_config_from_yaml(f'{ROOT}/configs/training/{args.config}.yaml')
