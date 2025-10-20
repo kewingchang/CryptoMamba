@@ -136,6 +136,7 @@ if __name__ == "__main__":
     # 新增：启用确定性模式和禁用 TF32
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    torch.backends.cuda.matmul.allow_tf32 = False
     torch.use_deterministic_algorithms(True)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # 固定 CUBLAS 配置
     torch.set_float32_matmul_precision('high')  # 禁用 TF32，使用高精度
