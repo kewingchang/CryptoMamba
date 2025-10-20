@@ -63,7 +63,7 @@ def get_args():
     parser.add_argument(
         "--num_workers",
         type=int,
-        default=1,  # 修改为 2
+        default=1,  # 修改为 1
         help="Number of parallel workers.",
     )
     parser.add_argument(
