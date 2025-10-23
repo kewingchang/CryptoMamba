@@ -139,7 +139,7 @@ if __name__ == "__main__":
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.use_deterministic_algorithms(True)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # 固定 CUBLAS 配置
-    torch.set_float32_matmul_precision('high')  # 禁用 TF32，使用高精度
+    torch.set_float32_matmul_precision('highest')  # 禁用 TF32，使用高精度
 
     # 额外：A100 特定禁用 TF32 (冗余，确保 cuDNN/matmul 不启用)
     torch.backends.cuda.matmul.allow_tf32 = False
