@@ -14,10 +14,6 @@ from data_utils.data_transforms import DataTransform
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from pytorch_lightning.loggers import TensorBoardLogger
 import warnings
-# kewing=====
-import causal_conv1d
-import mamba_ssm
-# kewing=====
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -158,15 +154,6 @@ if __name__ == "__main__":
 
     # 禁用 cuDNN
     torch.backends.cudnn.enabled = False
-
-    # kewing=====
-    # Test multiple runs
-    for _ in range(2):
-        x = torch.randn(1, 10, 64, device='cuda')
-        model = mamba_ssm.Mamba(d_model=64).cuda()
-        out = model(x)
-        print(out)
-    # kewing=====
 
     logdir = args.logdir
 
