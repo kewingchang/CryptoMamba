@@ -1,4 +1,7 @@
-import os, sys, pathlib
+import os
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # 移到文件开头，确保在 import torch 前设置
+
+import sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
 import yaml
@@ -138,7 +141,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.use_deterministic_algorithms(True)
-    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # 固定 CUBLAS 配置
+    # os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # 固定 CUBLAS 配置
     torch.set_float32_matmul_precision('high')  # 禁用 TF32，使用高精度
 
     # 额外：A100 特定禁用 TF32 (冗余，确保 cuDNN/matmul 不启用)
