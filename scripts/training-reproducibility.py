@@ -166,7 +166,6 @@ if __name__ == "__main__":
         model = mamba_ssm.Mamba(d_model=64).cuda()
         out = model(x)
         print(out)
-    return
     # kewing=====
 
     logdir = args.logdir
