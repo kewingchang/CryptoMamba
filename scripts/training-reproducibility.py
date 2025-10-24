@@ -66,7 +66,7 @@ def get_args():
     parser.add_argument(
         "--num_workers",
         type=int,
-        default=1,  # 修改为 1
+        default=4,
         help="Number of parallel workers.",
     )
     parser.add_argument(
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
     # 新增：启用确定性模式和禁用 TF32
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.benchmark = False
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.use_deterministic_algorithms(True)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # 固定 CUBLAS 配置
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     torch.cuda.manual_seed_all(args.seed)
 
     # 禁用 cuDNN
-    torch.backends.cudnn.enabled = False
+    # torch.backends.cudnn.enabled = False
 
     logdir = args.logdir
 
