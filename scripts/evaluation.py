@@ -136,7 +136,7 @@ def load_model(config, ckpt_path):
 def run_model(model, dataloader, factors=None):
     target_list = []
     preds_list = []
-    timetamps = []
+    timestamps = []  # 修正拼写 (timetamps -> timestamps)
     with torch.no_grad():
         for batch in dataloader:
             ts = batch.get('Timestamp').numpy().reshape(-1)
@@ -145,25 +145,32 @@ def run_model(model, dataloader, factors=None):
             preds = model(features).cpu().numpy().reshape(-1)
             target_list += [float(x) for x in list(target)]
             preds_list += [float(x) for x in list(preds)]
-            timetamps += [float(x) for x in list(ts)]
-
+            timestamps += [float(x) for x in list(ts)]
     if factors is not None:
+        # 反归一化 targets/preds (log + Min-Max)
         scale = factors.get(model.y_key).get('max') - factors.get(model.y_key).get('min')
         shift = factors.get(model.y_key).get('min')
-        target_list = [x * scale + shift for x in target_list]
-        preds_list = [x * scale + shift for x in preds_list]
+        target_list = [np.exp(x * scale + shift) - 1e-8 for x in target_list]  # 先反 Min-Max 再反 log
+        preds_list = [np.exp(x * scale + shift) - 1e-8 for x in preds_list]
+        # Clip 避免负/零
+        target_list = [max(x, 1e-6) for x in target_list]
+        preds_list = [max(x, 1e-6) for x in preds_list]
+        # Timestamp 只反 Min-Max (无 log)
         scale = factors.get('Timestamp').get('max') - factors.get('Timestamp').get('min')
         shift = factors.get('Timestamp').get('min')
-        timetamps = [x * scale + shift for x in timetamps]
+        timestamps = [x * scale + shift for x in timestamps]
     targets = np.asarray(target_list)
     preds = np.asarray(preds_list)
+    timestamps = [datetime.fromtimestamp(int(x)) for x in timestamps]
+    # metrics 计算
     targets_tensor = torch.tensor(target_list)
     preds_tensor = torch.tensor(preds_list)
-    timetamps = [datetime.fromtimestamp(int(x)) for x in timetamps]
     mse = float(model.mse(preds_tensor, targets_tensor))
-    mape = float(model.mape(preds_tensor, targets_tensor))
+    # MAPE 处理 /0
+    valid_mask = np.abs(targets) > 1e-6
+    mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if valid_mask.any() else np.nan
     l1 = float(model.l1(preds_tensor, targets_tensor))
-    return timetamps, targets, preds, mse, mape, l1
+    return timestamps, targets, preds, mse, mape, l1
 
 
 
