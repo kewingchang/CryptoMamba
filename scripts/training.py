@@ -193,6 +193,8 @@ if __name__ == "__main__":
                          logger=logger,
                          callbacks=callbacks,
                          strategy = DDPStrategy(find_unused_parameters=False),
+                         gradient_clip_val=1.0,  # 添加, clip gradients to [-1,1]
+                         gradient_clip_algorithm="norm"  # 或 "value"
                          )
 
     trainer.fit(model, datamodule=data_module)
