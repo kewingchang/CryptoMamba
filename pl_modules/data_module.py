@@ -68,19 +68,12 @@ class CMambaDataModule(pl.LightningDataModule):
 
     def normalize(self):
         tmp = {}
-        for split in self.data_dict.keys():
-            data = self.data_dict.get(split)
-            for key in data.keys():
-                max_val = max(data.get(key))
-                min_val = min(data.get(key))
-                if not key in tmp.keys():
-                    tmp[key] = {
-                        'min': min_val,
-                        'max': max_val
-                    }
-                else:
-                    tmp.get(key)['max'] = max(max_val, tmp.get(key).get('max'))
-                    tmp.get(key)['min'] = min(min_val, tmp.get(key).get('min'))
+        data = self.data_dict.get('train')  # 只用 train
+        for key in data.keys():
+            tmp[key] = {
+                'min': min(data.get(key)),
+                'max': max(data.get(key))
+            }
         for data in self.data_dict.values():
             for key in data.keys():
                 if key == 'Timestamp':
