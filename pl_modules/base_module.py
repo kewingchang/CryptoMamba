@@ -57,8 +57,11 @@ class BaseModule(pl.LightningModule):
     def denormalize(self, y, y_hat):
         if self.normalization_coeffs is not None:
             scale, shift = self.normalization_coeffs
-            y = torch.exp(y * scale + shift) - 1e-8  # 先反 Min-Max 再反 log
+            y = torch.exp(y * scale + shift) - 1e-8
             y_hat = torch.exp(y_hat * scale + shift) - 1e-8
+            # Clip 到小正值,避免负/零
+            y = torch.clamp(y, min=1e-6)
+            y_hat = torch.clamp(y_hat, min=1e-6)
         return y, y_hat
 
     def training_step(self, batch, batch_idx):
