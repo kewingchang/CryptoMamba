@@ -65,20 +65,36 @@ class CMambaDataModule(pl.LightningDataModule):
         if normalize:
             self.normalize()
 
-
     def normalize(self):
         tmp = {}
-        data = self.data_dict.get('train')  # 只用 train
-        for key in data.keys():
+        train_data = self.data_dict.get('train')  # 只用 train 计算 min/max
+    
+        # 先对所有 split 应用 log 变换（在计算 min/max 前）
+        for data in self.data_dict.values():
+            for key in data.keys():
+                if key not in ['Timestamp']:  # 排除 Timestamp
+                    # data[key] 是 pd.Series，用 np.log
+                    data[key] = np.log(data[key] + 1e-8)
+    
+        # 现在基于 log 后的 train 数据计算 min/max
+        for key in train_data.keys():
             tmp[key] = {
-                'min': min(data.get(key)),
-                'max': max(data.get(key))
+                'min': np.min(train_data.get(key)),
+                'max': np.max(train_data.get(key))
             }
+    
+        # 应用 Min-Max 到所有 split（基于 train min/max）
         for data in self.data_dict.values():
             for key in data.keys():
                 if key == 'Timestamp':
                     data['Timestamp_orig'] = data.get(key)
-                data[key] = (data.get(key) - tmp.get(key).get('min')) / (tmp.get(key).get('max') - tmp.get(key).get('min'))
+                min_val = tmp.get(key).get('min')
+                max_val = tmp.get(key).get('max')
+                if max_val - min_val != 0:  # 避免除零
+                    data[key] = (data.get(key) - min_val) / (max_val - min_val)
+                else:
+                    data[key] = data.get(key)  # 如果 max==min，保持原值（或处理为 0）
+    
         self.factors = tmp
 
     def _create_data_loader(
