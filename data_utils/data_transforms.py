@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 
 class DataTransform:
     def __init__(self, is_train, use_volume=False, additional_features=[]):
