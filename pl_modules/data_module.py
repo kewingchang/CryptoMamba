@@ -68,6 +68,11 @@ class CMambaDataModule(pl.LightningDataModule):
     def normalize(self):
         tmp = {}
         train_data = self.data_dict.get('train')  # 只用 train 计算 min/max
+
+        for data in self.data_dict.values():
+        for key in data.keys():
+            if key not in ['Timestamp']:
+                assert np.all(data[key] >= 0), f"Negative in {key}"
     
         # 先对所有 split 应用 log 变换（在计算 min/max 前）
         for data in self.data_dict.values():
