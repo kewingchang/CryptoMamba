@@ -18,7 +18,7 @@ class DataTransform:
         for key in self.keys:
             data = torch.tensor(window.get(key).tolist())
             if key not in ['Timestamp', 'Timestamp_orig']:  # 排除 Timestamp 和 Timestamp_orig
-                data = np.log(data + 1e-8)  # Log 变换
+                data = torch.log(data + 1e-8)  # Log 变换
             output[key] = data[-1]
             output[f'{key}_old'] = data[-2]
             if key == 'Timestamp_orig':
