@@ -210,7 +210,9 @@ if __name__ == "__main__":
     today = np.exp(today * scale_pred + shift_pred) - 1e-8
     today = max(today, 1e-6)
     # pred_date 使用 min_ts 恢复
-    pred_date = datetime.fromtimestamp(int(float(features['Timestamp'][0,-1]) * t_scale + t_shift))  # 修正：用 features['Timestamp'][-1]
+    # pred_date = datetime.fromtimestamp(int(float(features['Timestamp'][0,-1]) * t_scale + t_shift))  # 修正：用 features['Timestamp'][-1]
+    pred_date_ts = float(features['Timestamp'][0,-1]) * t_scale + t_shift if t_scale != 0 else float(data.get('Timestamp')[-1])
+    pred_date = datetime.fromtimestamp(int(pred_date_ts))
 
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')
