@@ -203,7 +203,12 @@ if __name__ == "__main__":
     today = float(x[close_idx, -1])
 
     with torch.no_grad():
-        pred = float(model(x[None, ...].cuda()).cpu()) * scale_pred + shift_pred
+        pred = float(model(x[None, ...].cuda()).cpu())
+        if normalize:
+            pred = np.exp(pred * scale_pred + shift_pred) - 1e-8  # 添加 exp -1e-8
+            pred = max(pred, 1e-6)  # 添加 clamp
+    today = np.exp(today * scale_pred + shift_pred) - 1e-8  # 同步 today
+    today = max(today, 1e-6)
 
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')
