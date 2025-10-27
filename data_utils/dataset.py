@@ -21,7 +21,7 @@ class CMambaDataset(torch.utils.data.Dataset):
     ):
 
         self.data = data
-        self.split = split
+        # self.split = split
         self.transform = transform
         self.window_size = window_size
         self.data_module = None  # 添加
