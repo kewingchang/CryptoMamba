@@ -66,6 +66,7 @@ class BaseModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x = batch['features']
+        print(f"Input features min/max: {x.min()}, {x.max()}")  # 添加，检查尺度
         y = batch[self.y_key]
         y_old = batch[f'{self.y_key}_old']
         if self.batch_size is None:
