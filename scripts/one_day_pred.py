@@ -169,9 +169,9 @@ if __name__ == "__main__":
     end_ts = data_module.converter.generate_timestamp(pred_date)
     start_ts = end_ts - model.window_size * 24 * 60 * 60
     data = data[data['Timestamp'] >= start_ts - 60 * 60]
-    data = data.tail(model.window_size + 1)  # 添加：裁剪到最后 window_size +1 行
-    if len(data) < model.window_size + 1:
-        raise ValueError(f"Data length {len(data)} < window_size +1 = {model.window_size +1}, insufficient data")
+    data = data.tail(model.window_size)  # 添加：裁剪到最后 window_size 行
+    if len(data) < model.window_size:
+        raise ValueError(f"Data length {len(data)} < window_size = {model.window_size}, insufficient data")
     txt_file = init_dirs(args, pred_date)
     
     
