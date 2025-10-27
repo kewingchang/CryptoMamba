@@ -66,14 +66,14 @@ class BaseModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x = batch['features']
-        # print(f"Input features min/max: {x.min()}, {x.max()}")  # 添加，检查尺度
-        # print(f"Features shape: {x.shape}, min: {x.min()}, max: {x.max()}")  # 综合打印
+        print(f"Input features min/max: {x.min()}, {x.max()}")  # 添加，检查尺度
+        print(f"Features shape: {x.shape}, min: {x.min()}, max: {x.max()}")  # 综合打印
         y = batch[self.y_key]
         y_old = batch[f'{self.y_key}_old']
         if self.batch_size is None:
             self.batch_size = x.shape[0]
         y_hat = self.forward(x, y_old).reshape(-1)
-        # print(f"y_hat min/max: {y_hat.min()}, {y_hat.max()}")  # 可选，检查模型输出
+        print(f"y_hat min/max: {y_hat.min()}, {y_hat.max()}")  # 可选，检查模型输出
         y, y_hat = self.denormalize(y, y_hat)
         mse = self.mse(y_hat, y)
         rmse = torch.sqrt(mse)
