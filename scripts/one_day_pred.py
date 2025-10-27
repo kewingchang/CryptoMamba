@@ -189,11 +189,13 @@ if __name__ == "__main__":
             shift = data_module.factors.get(key, {}).get('min', 0)
             tmp = [(x - shift) / scale if scale != 0 else x for x in tmp]
         else:
-            tmp = [x - data_module.min_ts for x in tmp]  # Timestamp 相对差
+            tmp = [(x - data_module.min_ts) / data_module.scale_ts_diff if data_module.scale_ts_diff != 0 else 0 for x in tmp]  # 相对差 + [0,1]
         features[key] = torch.tensor(tmp).reshape(1, -1)
         if key == model.y_key:
             scale_pred = scale
             shift_pred = shift
+    # pred_date
+    pred_date = datetime.fromtimestamp(int(float(data.get('Timestamp')[-1]) * data_module.scale_ts_diff + data_module.min_ts))
     
     x = torch.cat([features.get(x) for x in features.keys()], dim=0)
     close_idx = -2 if use_volume else -1
