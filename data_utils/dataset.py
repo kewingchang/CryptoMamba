@@ -21,8 +21,10 @@ class CMambaDataset(torch.utils.data.Dataset):
     ):
 
         self.data = data
+        self.split = split
         self.transform = transform
         self.window_size = window_size
+        self.data_module = None  # 添加
             
         print('{} data points loaded as {} split.'.format(len(self), split))
 
@@ -33,6 +35,8 @@ class CMambaDataset(torch.utils.data.Dataset):
         sample = self.data.iloc[i: i + self.window_size + 1]
         sample = self.transform(sample)
         return sample
+    def set_data_module(self, data_module):  # 添加
+            self.data_module = data_module
     
 class DataConverter:
     def __init__(self, config) -> None:
