@@ -110,6 +110,7 @@ class CMambaDataModule(pl.LightningDataModule):
             window_size=self.window_size,
             transform=data_transform,
         )
+        dataset.set_data_module(self)  # 添加
 
         batch_size = self.batch_size if batch_size is None else batch_size
         sampler = torch.utils.data.DistributedSampler(dataset) if self.distributed_sampler else None
