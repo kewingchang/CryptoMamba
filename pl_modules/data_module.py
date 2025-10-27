@@ -73,6 +73,7 @@ class CMambaDataModule(pl.LightningDataModule):
         for data in self.data_dict.values():
             for key in data.keys():
                 if key not in ['Timestamp']:  # 排除 Timestamp
+                    assert np.all(data[key] >= 0), f"Negative in {key}"
                     # data[key] 是 pd.Series，用 np.log
                     data[key] = np.log(data[key] + 1e-8)
     
