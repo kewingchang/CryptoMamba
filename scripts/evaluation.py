@@ -152,23 +152,38 @@ def run_model(model, dataloader, factors=None):
         shift = factors.get(model.y_key).get('min')
         target_list = [np.exp(x * scale + shift) - 1e-8 for x in target_list]
         preds_list = [np.exp(x * scale + shift) - 1e-8 for x in preds_list]
-        target_list = [max(x, 1e-6) for x in target_list]  # clamp
-        preds_list = [max(x, 1e-6) for x in preds_list]  # clamp
-        # Timestamp 如果跳过 Min-Max，移除反归一化
-        # scale = factors.get('Timestamp').get('max') - factors.get('Timestamp').get('min')
-        # shift = factors.get('Timestamp').get('min')
-        # timestamps = [x * scale + shift for x in timestamps]
+        target_list = [max(x, 1e-6) for x in target_list]
+        preds_list = [max(x, 1e-6) for x in preds_list]
+        # Timestamp 反转为绝对时间
+        min_ts = dataloader.dataset.data_module.min_ts  # 获取 min_ts
+        timestamps = [datetime.fromtimestamp(int(x + min_ts)) for x in timestamps]
     targets = np.asarray(target_list)
     preds = np.asarray(preds_list)
-    timestamps = [datetime.fromtimestamp(int(x)) for x in timestamps]
-    targets_tensor = torch.tensor(target_list)
-    preds_tensor = torch.tensor(preds_list)
-    mse = float(model.mse(preds_tensor, targets_tensor))
-    # valid_mask = np.abs(targets) > 1e-6
-    # mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if valid_mask.any() else np.nan
-    valid_mask = np.abs(target_list) > 1e-6  # 用 target_list (list)
-    mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if np.any(valid_mask) else np.nan
-    l1 = float(model.l1(preds_tensor, targets_tensor))
+    valid_mask = np.abs(target_list) > 1e-6
+    mape = float(model.mape(torch.tensor(preds_list)[valid_mask], torch.tensor(target_list)[valid_mask])) if np.any(valid_mask) else np.nan
+    mse = float(model.mse(torch.tensor(preds_list), torch.tensor(target_list)))
+    l1 = float(model.l1(torch.tensor(preds_list), torch.tensor(target_list)))
+    # Test 计算
+    if key == 'Test':
+        valid_mask = np.abs(targets) > 1e-6
+        if valid_mask.all():
+            prev_targets = np.roll(targets, 1)[1:]
+            prev_preds = np.roll(preds, 1)[1:]
+            actual_directions = targets[1:] > prev_targets
+            pred_directions = preds[1:] > prev_preds
+            direction_acc = np.mean(actual_directions == pred_directions) * 100
+            print(f"Test Direction Accuracy: {direction_acc:.2f}%")
+            actual_returns = (targets[1:] - prev_targets) / prev_targets
+            trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)
+            win_rate = np.mean(trade_pnl > 0) * 100
+            losses = trade_pnl[trade_pnl < 0]
+            avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0
+            max_loss = np.min(trade_pnl) * 100
+            print(f"Test Win Rate: {win_rate:.2f}%")
+            print(f"Test Average Trade Loss: {avg_loss:.2f}%")
+            print(f"Test Maximum Trade Loss: {max_loss:.2f}%")
+        else:
+            print("Test metrics skipped: invalid targets (near zero)")
     return timestamps, targets, preds, mse, mape, l1
 
 
