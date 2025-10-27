@@ -156,7 +156,8 @@ def run_model(model, dataloader, factors=None):
         preds_list = [max(x, 1e-6) for x in preds_list]
         # Timestamp 反转为绝对时间
         min_ts = dataloader.dataset.data_module.min_ts  # 获取 min_ts
-        timestamps = [datetime.fromtimestamp(int(x + min_ts)) for x in timestamps]
+        timestamps = [(x * data_module.scale_ts_diff + data_module.min_ts) for x in timestamps]
+    timestamps = [datetime.fromtimestamp(int(x)) for x in timestamps]
     targets = np.asarray(target_list)
     preds = np.asarray(preds_list)
     valid_mask = np.abs(target_list) > 1e-6
