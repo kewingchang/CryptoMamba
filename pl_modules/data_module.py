@@ -65,39 +65,39 @@ class CMambaDataModule(pl.LightningDataModule):
         if normalize:
             self.normalize()
 
-def normalize(self):
-    tmp = {}
-    train_data = self.data_dict.get('train')
-    min_ts = np.min(train_data['Timestamp'])
-    max_ts_diff = np.max(train_data['Timestamp']) - min_ts  # 最大相对差
-    for data in self.data_dict.values():
-        for key in data.keys():
-            if key == 'Timestamp':
-                data['Timestamp_orig'] = data.get(key)
-                data[key] = (data[key] - min_ts) / max_ts_diff if max_ts_diff != 0 else 0  # 相对差 + [0,1]
-                continue
-            assert np.all(data[key] >= 0), f"Negative in {key}"
-            data[key] = np.log(data[key] + 1e-8)
-    # 非 Timestamp min/max 不变
-    for key in train_data.keys():
-        if key != 'Timestamp':
-            tmp[key] = {
-                'min': np.min(train_data.get(key)),
-                'max': np.max(train_data.get(key))
-            }
-    for data in self.data_dict.values():
-        for key in data.keys():
-            if key == 'Timestamp':
-                continue
-            min_val = tmp.get(key, {}).get('min', 0)
-            max_val = tmp.get(key, {}).get('max', 1)
-            if max_val - min_val != 0:
-                data[key] = (data.get(key) - min_val) / (max_val - min_val)
-            else:
-                data[key] = data.get(key)
-    self.factors = tmp
-    self.min_ts = min_ts
-    self.scale_ts_diff = max_ts_diff  # 保存 scale
+    def normalize(self):
+        tmp = {}
+        train_data = self.data_dict.get('train')
+        min_ts = np.min(train_data['Timestamp'])
+        max_ts_diff = np.max(train_data['Timestamp']) - min_ts  # 最大相对差
+        for data in self.data_dict.values():
+            for key in data.keys():
+                if key == 'Timestamp':
+                    data['Timestamp_orig'] = data.get(key)
+                    data[key] = (data[key] - min_ts) / max_ts_diff if max_ts_diff != 0 else 0  # 相对差 + [0,1]
+                    continue
+                assert np.all(data[key] >= 0), f"Negative in {key}"
+                data[key] = np.log(data[key] + 1e-8)
+        # 非 Timestamp min/max 不变
+        for key in train_data.keys():
+            if key != 'Timestamp':
+                tmp[key] = {
+                    'min': np.min(train_data.get(key)),
+                    'max': np.max(train_data.get(key))
+                }
+        for data in self.data_dict.values():
+            for key in data.keys():
+                if key == 'Timestamp':
+                    continue
+                min_val = tmp.get(key, {}).get('min', 0)
+                max_val = tmp.get(key, {}).get('max', 1)
+                if max_val - min_val != 0:
+                    data[key] = (data.get(key) - min_val) / (max_val - min_val)
+                else:
+                    data[key] = data.get(key)
+        self.factors = tmp
+        self.min_ts = min_ts
+        self.scale_ts_diff = max_ts_diff  # 保存 scale
 
     def _create_data_loader(
         self,
