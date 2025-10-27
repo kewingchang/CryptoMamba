@@ -182,16 +182,14 @@ if __name__ == "__main__":
 
     for key in key_list:
         tmp = list(data.get(key))
-        if normalize:
-            scale = data_module.factors.get(key).get('max') - data_module.factors.get(key).get('min')
-            shift = data_module.factors.get(key).get('min')
-        else:
-            scale = 1
-            shift = 0
-        if key == 'Volume':
-            tmp = [x / 1e9 for x in tmp]
-        tmp = [(x - shift) / scale for x in tmp]
+        if key not in ['Timestamp']:  # log 仅非 Timestamp
+            tmp = [np.log(x + 1e-8) for x in tmp]
+        if normalize and key != 'Timestamp':  # Min-Max 仅非 Timestamp
+            scale = data_module.factors.get(key, {}).get('max', 1) - data_module.factors.get(key, {}).get('min', 0)
+            shift = data_module.factors.get(key, {}).get('min', 0)
+            tmp = [(x - shift) / scale if scale != 0 else x for x in tmp]
         features[key] = torch.tensor(tmp).reshape(1, -1)
+        # ...
         if key == 'Timestamp':
             t_scale = scale
             t_shift = shift
