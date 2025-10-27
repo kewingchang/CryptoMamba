@@ -163,13 +163,11 @@ if __name__ == "__main__":
                                    )
     
     # end_date = "2024-27-10"
-    if args.date is None:
-        end_ts = max(data['Timestamp']) + 24 * 60 * 60
-    else:
-        end_ts = int(time.mktime(datetime.strptime(args.date, "%Y-%m-%d").timetuple()))
-    start_ts = end_ts - 14 * 24 * 60 * 60 - 60 * 60
-    pred_date = datetime.fromtimestamp(end_ts).strftime("%Y-%m-%d")
-    data = data[data['Timestamp'] < end_ts]
+    pred_date = args.date
+    if pred_date is None:
+        pred_date = data_module.converter.end_date
+    end_ts = data_module.converter.generate_timestamp(pred_date)
+    start_ts = end_ts - model.window_size * 24 * 60 * 60
     data = data[data['Timestamp'] >= start_ts - 60 * 60]
 
     txt_file = init_dirs(args, pred_date)
@@ -179,6 +177,7 @@ if __name__ == "__main__":
     key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
     if use_volume:
         key_list.append('Volume')
+    scale_pred, shift_pred, t_scale, t_shift = None, None, None, None
 
     for key in key_list:
         tmp = list(data.get(key))
@@ -194,9 +193,10 @@ if __name__ == "__main__":
         if key == model.y_key:
             scale_pred = scale
             shift_pred = shift
-    # pred_date
-    pred_date = datetime.fromtimestamp(int(float(data.get('Timestamp')[-1]) * data_module.scale_ts_diff + data_module.min_ts))
-    
+        if key == 'Timestamp':
+            t_scale = data_module.scale_ts_diff
+            t_shift = data_module.min_ts
+  
     x = torch.cat([features.get(x) for x in features.keys()], dim=0)
     close_idx = -2 if use_volume else -1
     today = float(x[close_idx, -1])
@@ -208,15 +208,7 @@ if __name__ == "__main__":
     today = np.exp(today * scale_pred + shift_pred) - 1e-8
     today = max(today, 1e-6)
     # pred_date 使用 min_ts 恢复
-    pred_date = datetime.fromtimestamp(int(float(data.get('Timestamp')[-1]) + data_module.min_ts))
-
-    with torch.no_grad():
-        pred = float(model(x[None, ...].cuda()).cpu())
-        if normalize:
-            pred = np.exp(pred * scale_pred + shift_pred) - 1e-8  # 添加 exp -1e-8
-            pred = max(pred, 1e-6)  # 添加 clamp
-    today = np.exp(today * scale_pred + shift_pred) - 1e-8  # 同步 today
-    today = max(today, 1e-6)
+    pred_date = datetime.fromtimestamp(int(float(features['Timestamp'][0,-1]) * t_scale + t_shift))  # 修正：用 features['Timestamp'][-1]
 
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')
