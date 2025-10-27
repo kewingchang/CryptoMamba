@@ -68,13 +68,19 @@ class CMambaDataModule(pl.LightningDataModule):
     def normalize(self):
         tmp = {}
         train_data = self.data_dict.get('train')
+        # 获取 train Timestamp 的最小值
+        min_ts = np.min(train_data['Timestamp'])
         for data in self.data_dict.values():
             for key in data.keys():
-                if key not in ['Timestamp']:  # 排除 Timestamp
-                    assert np.all(data[key] >= 0), f"Negative in {key}"
-                    data[key] = np.log(data[key] + 1e-8)  # log 仅非 Timestamp
+                if key == 'Timestamp':
+                    data['Timestamp_orig'] = data.get(key)  # 保存原始
+                    data[key] = data[key] - min_ts  # 相对时间差
+                    continue
+                assert np.all(data[key] >= 0), f"Negative in {key}"
+                data[key] = np.log(data[key] + 1e-8)  # log 仅非 Timestamp
+        # 只对非 Timestamp 计算 min/max
         for key in train_data.keys():
-            if key != 'Timestamp':  # 仅对非 Timestamp 计算 min/max
+            if key != 'Timestamp':
                 tmp[key] = {
                     'min': np.min(train_data.get(key)),
                     'max': np.max(train_data.get(key))
@@ -82,7 +88,6 @@ class CMambaDataModule(pl.LightningDataModule):
         for data in self.data_dict.values():
             for key in data.keys():
                 if key == 'Timestamp':
-                    data['Timestamp_orig'] = data.get(key)  # 保存原始
                     continue  # 跳过 Timestamp Min-Max
                 min_val = tmp.get(key, {}).get('min', 0)
                 max_val = tmp.get(key, {}).get('max', 1)
@@ -91,6 +96,7 @@ class CMambaDataModule(pl.LightningDataModule):
                 else:
                     data[key] = data.get(key)
         self.factors = tmp
+        self.min_ts = min_ts  # 保存 min_ts 用于反归一化
 
     def _create_data_loader(
         self,
