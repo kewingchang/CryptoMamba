@@ -67,35 +67,29 @@ class CMambaDataModule(pl.LightningDataModule):
 
     def normalize(self):
         tmp = {}
-        train_data = self.data_dict.get('train')  # 只用 train 计算 min/max
-    
-        # 先对所有 split 应用 log 变换（在计算 min/max 前）
+        train_data = self.data_dict.get('train')
         for data in self.data_dict.values():
             for key in data.keys():
                 if key not in ['Timestamp']:  # 排除 Timestamp
                     assert np.all(data[key] >= 0), f"Negative in {key}"
-                    # data[key] 是 pd.Series，用 np.log
-                    data[key] = np.log(data[key] + 1e-8)
-    
-        # 现在基于 log 后的 train 数据计算 min/max
+                    data[key] = np.log(data[key] + 1e-8)  # log 仅非 Timestamp
         for key in train_data.keys():
-            tmp[key] = {
-                'min': np.min(train_data.get(key)),
-                'max': np.max(train_data.get(key))
-            }
-    
-        # 应用 Min-Max 到所有 split（基于 train min/max）
+            if key != 'Timestamp':  # 仅对非 Timestamp 计算 min/max
+                tmp[key] = {
+                    'min': np.min(train_data.get(key)),
+                    'max': np.max(train_data.get(key))
+                }
         for data in self.data_dict.values():
             for key in data.keys():
                 if key == 'Timestamp':
-                    data['Timestamp_orig'] = data.get(key)
-                min_val = tmp.get(key).get('min')
-                max_val = tmp.get(key).get('max')
-                if max_val - min_val != 0:  # 避免除零
+                    data['Timestamp_orig'] = data.get(key)  # 保存原始
+                    continue  # 跳过 Timestamp Min-Max
+                min_val = tmp.get(key, {}).get('min', 0)
+                max_val = tmp.get(key, {}).get('max', 1)
+                if max_val - min_val != 0:
                     data[key] = (data.get(key) - min_val) / (max_val - min_val)
                 else:
-                    data[key] = data.get(key)  # 如果 max==min，保持原值（或处理为 0）
-    
+                    data[key] = data.get(key)
         self.factors = tmp
 
     def _create_data_loader(
