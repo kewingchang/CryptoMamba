@@ -182,25 +182,31 @@ if __name__ == "__main__":
 
     for key in key_list:
         tmp = list(data.get(key))
-        if key not in ['Timestamp']:  # log 仅非 Timestamp
+        if key not in ['Timestamp']:
             tmp = [np.log(x + 1e-8) for x in tmp]
-        if normalize and key != 'Timestamp':  # Min-Max 仅非 Timestamp
+        if normalize and key != 'Timestamp':
             scale = data_module.factors.get(key, {}).get('max', 1) - data_module.factors.get(key, {}).get('min', 0)
             shift = data_module.factors.get(key, {}).get('min', 0)
             tmp = [(x - shift) / scale if scale != 0 else x for x in tmp]
+        else:
+            tmp = [x - data_module.min_ts for x in tmp]  # Timestamp 相对差
         features[key] = torch.tensor(tmp).reshape(1, -1)
-        # ...
-        if key == 'Timestamp':
-            t_scale = scale
-            t_shift = shift
         if key == model.y_key:
             scale_pred = scale
             shift_pred = shift
-
+    
     x = torch.cat([features.get(x) for x in features.keys()], dim=0)
-
     close_idx = -2 if use_volume else -1
     today = float(x[close_idx, -1])
+    with torch.no_grad():
+        pred = float(model(x[None, ...].cuda()).cpu())
+        if normalize:
+            pred = np.exp(pred * scale_pred + shift_pred) - 1e-8
+            pred = max(pred, 1e-6)
+    today = np.exp(today * scale_pred + shift_pred) - 1e-8
+    today = max(today, 1e-6)
+    # pred_date 使用 min_ts 恢复
+    pred_date = datetime.fromtimestamp(int(float(data.get('Timestamp')[-1]) + data_module.min_ts))
 
     with torch.no_grad():
         pred = float(model(x[None, ...].cuda()).cpu())
