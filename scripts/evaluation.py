@@ -230,24 +230,45 @@ if __name__ == "__main__":
         print_and_write(f, txt)
         # ADD BY KEWING
         # 新加：计算方向准确率、胜率、平均交易亏损、最大交易亏损（只针对 Test）
-        if key == 'Test':
-            prev_targets = np.roll(targets, 1)[1:]  # 前一实际值，忽略首 NaN
-            prev_preds = np.roll(preds, 1)[1:]      # 前一预测值，忽略首 NaN
-            actual_directions = targets[1:] > prev_targets  # 实际涨跌 (True=涨)
-            pred_directions = preds[1:] > prev_preds        # 预测涨跌 (True=涨)
-            direction_acc = np.mean(actual_directions == pred_directions) * 100
-            print(f"Test Direction Accuracy: {direction_acc:.2f}%")
+        # if key == 'Test':
+        #     prev_targets = np.roll(targets, 1)[1:]  # 前一实际值，忽略首 NaN
+        #     prev_preds = np.roll(preds, 1)[1:]      # 前一预测值，忽略首 NaN
+        #     actual_directions = targets[1:] > prev_targets  # 实际涨跌 (True=涨)
+        #     pred_directions = preds[1:] > prev_preds        # 预测涨跌 (True=涨)
+        #     direction_acc = np.mean(actual_directions == pred_directions) * 100
+        #     print(f"Test Direction Accuracy: {direction_acc:.2f}%")
             
-            # 计算交易 P&L（简单策略：预测涨做多、预测跌做空）
-            actual_returns = (targets[1:] - prev_targets) / prev_targets  # 实际回报率
-            trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)  # 做多/做空回报
-            win_rate = np.mean(trade_pnl > 0) * 100  # 胜率（盈利交易比例）
-            losses = trade_pnl[trade_pnl < 0]  # 亏损交易
-            avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0  # 平均亏损（%）
-            max_loss = np.min(trade_pnl) * 100  # 最大单笔亏损（%）
-            print(f"Test Win Rate: {win_rate:.2f}%")
-            print(f"Test Average Trade Loss: {avg_loss:.2f}%")
-            print(f"Test Maximum Trade Loss: {max_loss:.2f}%")
+        #     # 计算交易 P&L（简单策略：预测涨做多、预测跌做空）
+        #     actual_returns = (targets[1:] - prev_targets) / prev_targets  # 实际回报率
+        #     trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)  # 做多/做空回报
+        #     win_rate = np.mean(trade_pnl > 0) * 100  # 胜率（盈利交易比例）
+        #     losses = trade_pnl[trade_pnl < 0]  # 亏损交易
+        #     avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0  # 平均亏损（%）
+        #     max_loss = np.min(trade_pnl) * 100  # 最大单笔亏损（%）
+        #     print(f"Test Win Rate: {win_rate:.2f}%")
+        #     print(f"Test Average Trade Loss: {avg_loss:.2f}%")
+        #     print(f"Test Maximum Trade Loss: {max_loss:.2f}%")
+        if key == 'Test':
+            valid_mask = np.abs(targets) > 1e-6  # 用 clamp 后 targets
+            if valid_mask.all():  # 避免 /0
+                prev_targets = np.roll(targets, 1)[1:]
+                prev_preds = np.roll(preds, 1)[1:]
+                actual_directions = targets[1:] > prev_targets
+                pred_directions = preds[1:] > prev_preds
+                direction_acc = np.mean(actual_directions == pred_directions) * 100
+                print(f"Test Direction Accuracy: {direction_acc:.2f}%")
+                
+                actual_returns = (targets[1:] - prev_targets) / prev_targets
+                trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)
+                win_rate = np.mean(trade_pnl > 0) * 100
+                losses = trade_pnl[trade_pnl < 0]
+                avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0
+                max_loss = np.min(trade_pnl) * 100
+                print(f"Test Win Rate: {win_rate:.2f}%")
+                print(f"Test Average Trade Loss: {avg_loss:.2f}%")
+                print(f"Test Maximum Trade Loss: {max_loss:.2f}%")
+            else:
+                print("Test metrics skipped: invalid targets (near zero)")
         # 
         # plt.plot(timstamps, preds, color=c)
         sns.lineplot(x=timstamps, y=preds, color=c, linewidth=2.5, label=key)
