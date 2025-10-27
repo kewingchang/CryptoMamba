@@ -72,6 +72,7 @@ class BaseModule(pl.LightningModule):
         if self.batch_size is None:
             self.batch_size = x.shape[0]
         y_hat = self.forward(x, y_old).reshape(-1)
+        print(f"y_hat min/max: {y_hat.min()}, {y_hat.max()}")  # 可选，检查模型输出
         y, y_hat = self.denormalize(y, y_hat)
         mse = self.mse(y_hat, y)
         rmse = torch.sqrt(mse)
