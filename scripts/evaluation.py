@@ -152,16 +152,21 @@ def run_model(model, dataloader, factors=None):
         shift = factors.get(model.y_key).get('min')
         target_list = [np.exp(x * scale + shift) - 1e-8 for x in target_list]
         preds_list = [np.exp(x * scale + shift) - 1e-8 for x in preds_list]
-        target_list = [max(x, 1e-6) for x in target_list]
-        preds_list = [max(x, 1e-6) for x in preds_list]
-        # Timestamp 不反归一化 (原始值)
-        timestamps = [datetime.fromtimestamp(int(x)) for x in timestamps]
+        target_list = [max(x, 1e-6) for x in target_list]  # clamp
+        preds_list = [max(x, 1e-6) for x in preds_list]  # clamp
+        # Timestamp 如果跳过 Min-Max，移除反归一化
+        # scale = factors.get('Timestamp').get('max') - factors.get('Timestamp').get('min')
+        # shift = factors.get('Timestamp').get('min')
+        # timestamps = [x * scale + shift for x in timestamps]
     targets = np.asarray(target_list)
     preds = np.asarray(preds_list)
+    timestamps = [datetime.fromtimestamp(int(x)) for x in timestamps]
+    targets_tensor = torch.tensor(target_list)
+    preds_tensor = torch.tensor(preds_list)
+    mse = float(model.mse(preds_tensor, targets_tensor))
     valid_mask = np.abs(targets) > 1e-6
-    mape = float(model.mape(torch.tensor(preds_list)[valid_mask], torch.tensor(target_list)[valid_mask])) if valid_mask.any() else np.nan
-    mse = float(model.mse(torch.tensor(preds_list), torch.tensor(target_list)))
-    l1 = float(model.l1(torch.tensor(preds_list), torch.tensor(target_list)))
+    mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if valid_mask.any() else np.nan
+    l1 = float(model.l1(preds_tensor, targets_tensor))
     return timestamps, targets, preds, mse, mape, l1
 
 
