@@ -191,7 +191,7 @@ if __name__ == "__main__":
             tmp = [(x - shift) / scale if scale != 0 else x for x in tmp]
         else:
             tmp = [(x - data_module.min_ts) / data_module.scale_ts_diff if data_module.scale_ts_diff != 0 else 0 for x in tmp]  # 相对差 + [0,1]
-        features[key] = torch.tensor(tmp).reshape(1, -1)
+        features[key] = torch.tensor(tmp, dtype=torch.float32).reshape(1, -1)
         if key == model.y_key:
             scale_pred = scale
             shift_pred = shift
