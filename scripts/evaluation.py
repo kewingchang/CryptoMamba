@@ -136,7 +136,7 @@ def load_model(config, ckpt_path):
 def run_model(model, dataloader, factors=None):
     target_list = []
     preds_list = []
-    timestamps = []  # 修正拼写 (timetamps -> timestamps)
+    timestamps = []
     with torch.no_grad():
         for batch in dataloader:
             ts = batch.get('Timestamp').numpy().reshape(-1)
@@ -150,26 +150,18 @@ def run_model(model, dataloader, factors=None):
         # 反归一化 targets/preds (log + Min-Max)
         scale = factors.get(model.y_key).get('max') - factors.get(model.y_key).get('min')
         shift = factors.get(model.y_key).get('min')
-        target_list = [np.exp(x * scale + shift) - 1e-8 for x in target_list]  # 先反 Min-Max 再反 log
+        target_list = [np.exp(x * scale + shift) - 1e-8 for x in target_list]
         preds_list = [np.exp(x * scale + shift) - 1e-8 for x in preds_list]
-        # Clip 避免负/零
         target_list = [max(x, 1e-6) for x in target_list]
         preds_list = [max(x, 1e-6) for x in preds_list]
-        # Timestamp 只反 Min-Max (无 log)
-        scale = factors.get('Timestamp').get('max') - factors.get('Timestamp').get('min')
-        shift = factors.get('Timestamp').get('min')
-        timestamps = [x * scale + shift for x in timestamps]
+        # Timestamp 不反归一化 (原始值)
+        timestamps = [datetime.fromtimestamp(int(x)) for x in timestamps]
     targets = np.asarray(target_list)
     preds = np.asarray(preds_list)
-    timestamps = [datetime.fromtimestamp(int(x)) for x in timestamps]
-    # metrics 计算
-    targets_tensor = torch.tensor(target_list)
-    preds_tensor = torch.tensor(preds_list)
-    mse = float(model.mse(preds_tensor, targets_tensor))
-    # MAPE 处理 /0
     valid_mask = np.abs(targets) > 1e-6
-    mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if valid_mask.any() else np.nan
-    l1 = float(model.l1(preds_tensor, targets_tensor))
+    mape = float(model.mape(torch.tensor(preds_list)[valid_mask], torch.tensor(target_list)[valid_mask])) if valid_mask.any() else np.nan
+    mse = float(model.mse(torch.tensor(preds_list), torch.tensor(target_list)))
+    l1 = float(model.l1(torch.tensor(preds_list), torch.tensor(target_list)))
     return timestamps, targets, preds, mse, mape, l1
 
 
