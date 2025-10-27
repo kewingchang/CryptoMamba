@@ -164,8 +164,10 @@ def run_model(model, dataloader, factors=None):
     targets_tensor = torch.tensor(target_list)
     preds_tensor = torch.tensor(preds_list)
     mse = float(model.mse(preds_tensor, targets_tensor))
-    valid_mask = np.abs(targets) > 1e-6
-    mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if valid_mask.any() else np.nan
+    # valid_mask = np.abs(targets) > 1e-6
+    # mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if valid_mask.any() else np.nan
+    valid_mask = np.abs(target_list) > 1e-6  # 用 target_list (list)
+    mape = float(model.mape(preds_tensor[valid_mask], targets_tensor[valid_mask])) if np.any(valid_mask) else np.nan
     l1 = float(model.l1(preds_tensor, targets_tensor))
     return timestamps, targets, preds, mse, mape, l1
 
