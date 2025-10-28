@@ -20,6 +20,8 @@ if __name__ == "__main__":
 	        print(f"Copied {file} to {target_dir}")
 
 	# 拷贝其他文件和目录
+	shutil.copy('log.txt', target_dir)
+	print(f"Copied log.txt to {target_dir}")
 	shutil.copy('logs/CMamba/version_0/hparams.yaml', target_dir)
 	print(f"Copied hparams.yaml to {target_dir}")
 	shutil.copytree('data', os.path.join(target_dir, 'data'), dirs_exist_ok=True)
