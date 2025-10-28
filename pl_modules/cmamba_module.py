@@ -1,7 +1,7 @@
 import torch.nn as nn
 from models.cmamba import CMamba
 from .base_module import BaseModule
-    
+from einops import rearrange  # ADDED FOR REVIN: import rearrange
 
 class CryptoMambaModule(BaseModule):
 
@@ -28,20 +28,28 @@ class CryptoMambaModule(BaseModule):
         optimizer='adam',
         mode='default',
         loss='rmse',
+        use_revin=False,  # ADDED FOR REVIN: add use_revin
         **kwargs
     ): 
-        super().__init__(lr=lr,
-                         lr_step_size=lr_step_size,
-                         lr_gamma=lr_gamma,
-                         weight_decay=weight_decay,
-                         logger_type=logger_type,
-                         y_key=y_key,
-                         optimizer=optimizer,
-                         mode=mode,
-                         window_size=window_size,
-                         loss=loss,
-                         )
+        super().__init__(
+            lr=lr,
+            lr_step_size=lr_step_size,
+            lr_gamma=lr_gamma,
+            weight_decay=weight_decay,
+            logger_type=logger_type,
+            y_key=y_key,
+            optimizer=optimizer,
+            mode=mode,
+            window_size=window_size,
+            loss=loss,
+            use_revin=use_revin,  # ADDED FOR REVIN: pass use_revin
+        )
         assert window_size == hidden_dims[0]
+
+        # ADDED FOR REVIN: initialize RevIN if use_revin
+        if self.use_revin:
+            self.revin = RevIN(num_features=num_features)
+        # END ADDED FOR REVIN
 
         self.model = CMamba(
             num_features=num_features,
