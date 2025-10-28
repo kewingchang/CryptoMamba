@@ -211,8 +211,11 @@ if __name__ == "__main__":
             pred = float(pred) * scale_pred + shift_pred
         elif hasattr(model.model, 'revin') and model.model.revin is not None:
             pred_tensor = pred.reshape(-1)
+            # _, pred_tensor = model.denormalize(None, pred_tensor)
+            pred_tensor = pred.reshape(-1).to(model.device)  # Add .to(model.device)
             _, pred_tensor = model.denormalize(None, pred_tensor)
-            pred = float(pred_tensor[0])
+            pred = float(pred_tensor.cpu()[0])  # Move back to CPU if needed
+            # pred = float(pred_tensor[0])
         else:
             pred = float(pred)
 
