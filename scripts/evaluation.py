@@ -151,7 +151,10 @@ def run_model(model, dataloader, factors=None):
                 preds = preds * scale + shift
             elif hasattr(model.model, 'revin') and model.model.revin is not None:
                 preds_tensor = torch.tensor(preds).to(model.device)
+                # _, preds_tensor = model.denormalize(None, preds_tensor)
+                preds_tensor = torch.tensor(preds).to(model.device)  # Add .to(model.device)
                 _, preds_tensor = model.denormalize(None, preds_tensor)
+                # 
                 preds = preds_tensor.cpu().numpy()
             target_list += [float(x) for x in list(target)]
             preds_list += [float(x) for x in list(preds)]
