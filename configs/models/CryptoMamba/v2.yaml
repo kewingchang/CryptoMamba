@@ -5,4 +5,5 @@ params:
     d_states: 64
     layer_density: 4
     loss: 'rmse'
-normalize: True
+    use_revin: True  # ADDED FOR REVIN: enable RevIN
+normalize: False  # MODIFIED FOR REVIN: disable min-max normalization
