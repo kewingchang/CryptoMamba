@@ -10,6 +10,9 @@ from data_utils.data_transforms import DataTransform
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from pytorch_lightning.loggers import TensorBoardLogger
 import warnings
+# ADDED FOR REVIN: import importlib for dynamic import
+import importlib
+# END ADDED FOR REVIN
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -118,7 +121,12 @@ def load_model(config, logger_type):
         for key in hyperparams.keys():
             model_config.get('params')[key] = hyperparams.get(key)
     target = model_config.get('target')
-    model = target(**model_config.get('params'), logger_type=logger_type)
+    # MODIFIED FOR REVIN: dynamic import the target class
+    module_path, class_name = target.rsplit('.', 1)
+    module = importlib.import_module(module_path)
+    target_class = getattr(module, class_name)
+    model = target_class(**model_config.get('params'), logger_type=logger_type)
+    # END MODIFIED FOR REVIN
     model.cuda()
     model.train()
     return model, normalize
