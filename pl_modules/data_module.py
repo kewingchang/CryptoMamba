@@ -67,37 +67,35 @@ class CMambaDataModule(pl.LightningDataModule):
 
     def normalize(self):
         tmp = {}
-        train_data = self.data_dict.get('train')
-        min_ts = np.min(train_data['Timestamp'])
-        max_ts_diff = np.max(train_data['Timestamp']) - min_ts  # 最大相对差
+        train_data = self.data_dict.get('train')  # 只用 train 计算 min/max
+    
+        # 先对所有 split 应用 log 变换（在计算 min/max 前）
+        for data in self.data_dict.values():
+            for key in data.keys():
+                if key not in ['Timestamp']:  # 排除 Timestamp
+                    # data[key] 是 pd.Series，用 np.log
+                    data[key] = np.log(data[key] + 1e-8)
+    
+        # 现在基于 log 后的 train 数据计算 min/max
+        for key in train_data.keys():
+            tmp[key] = {
+                'min': np.min(train_data.get(key)),
+                'max': np.max(train_data.get(key))
+            }
+    
+        # 应用 Min-Max 到所有 split（基于 train min/max）
         for data in self.data_dict.values():
             for key in data.keys():
                 if key == 'Timestamp':
                     data['Timestamp_orig'] = data.get(key)
-                    data[key] = (data[key] - min_ts) / max_ts_diff if max_ts_diff != 0 else 0  # 相对差 + [0,1]
-                    continue
-                assert np.all(data[key] >= 0), f"Negative in {key}"
-                data[key] = np.log(data[key] + 1e-8)
-        # 非 Timestamp min/max 不变
-        for key in train_data.keys():
-            if key != 'Timestamp':
-                tmp[key] = {
-                    'min': np.min(train_data.get(key)),
-                    'max': np.max(train_data.get(key))
-                }
-        for data in self.data_dict.values():
-            for key in data.keys():
-                if key == 'Timestamp':
-                    continue
-                min_val = tmp.get(key, {}).get('min', 0)
-                max_val = tmp.get(key, {}).get('max', 1)
-                if max_val - min_val != 0:
+                min_val = tmp.get(key).get('min')
+                max_val = tmp.get(key).get('max')
+                if max_val - min_val != 0:  # 避免除零
                     data[key] = (data.get(key) - min_val) / (max_val - min_val)
                 else:
-                    data[key] = data.get(key)
+                    data[key] = data.get(key)  # 如果 max==min，保持原值（或处理为 0）
+    
         self.factors = tmp
-        self.min_ts = min_ts
-        self.scale_ts_diff = max_ts_diff  # 保存 scale
 
     def _create_data_loader(
         self,
@@ -111,7 +109,6 @@ class CMambaDataModule(pl.LightningDataModule):
             window_size=self.window_size,
             transform=data_transform,
         )
-        dataset.set_data_module(self)  # 添加
 
         batch_size = self.batch_size if batch_size is None else batch_size
         sampler = torch.utils.data.DistributedSampler(dataset) if self.distributed_sampler else None
