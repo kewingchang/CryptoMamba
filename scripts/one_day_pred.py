@@ -1,3 +1,4 @@
+# one_day_pred.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
@@ -13,11 +14,9 @@ from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
 from utils.trade import buy_sell_vanilla, buy_sell_smart
 import warnings
-# ADDED FOR REVIN: import importlib for dynamic import
-import importlib
-# END ADDED FOR REVIN
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
 
 ROOT = io_tools.get_root(__file__, num_returns=2)
 
@@ -73,6 +72,7 @@ def get_args():
         default=2,
         type=int,
     )
+
     args = parser.parse_args()
     return args
 
@@ -94,7 +94,7 @@ def save_all_hparams(log_dir, args):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     save_dict = vars(args)
-    save_dict.pop('checkpoint_callback', None)
+    save_dict.pop('checkpoint_callback')
     with open(log_dir + '/hparams.yaml', 'w') as f:
         yaml.dump(save_dict, f)
 
@@ -103,60 +103,67 @@ def load_model(config, ckpt_path):
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
-
-    # MODIFIED FOR REVIN: disable normalize if use_revin
-    if model_config.get('params', {}).get('use_revin', False):
-        model_config['normalize'] = False
-    # END MODIFIED FOR REVIN
     normalize = model_config.get('normalize', False)
-    hyperparams = config.get('hyperparams')
-    if hyperparams is not None:
-        for key in hyperparams.keys():
-            model_config.get('params')[key] = hyperparams.get(key)
-    target = model_config.get('target')
-    # MODIFIED FOR REVIN: dynamic import the target class
-    module_path, class_name = target.rsplit('.', 1)
-    module = importlib.import_module(module_path)
-    target_class = getattr(module, class_name)
-    model = target_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
-    # END MODIFIED FOR REVIN
+    model_class = io_tools.get_obj_from_str(model_config.get('target'))
+    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
     model.cuda()
-    model.eval()
     return model, normalize
 
+@torch.no_grad()
+def run_model(model, dataloader):
+    target_list = []
+    preds_list = []
+    timetamps = []
+    with torch.no_grad():
+        for batch in dataloader:
+            ts = batch.get('Timestamp').numpy().reshape(-1)
+            target = batch.get('Close').numpy().reshape(-1)
+            features = batch.get('features').to(model.device)
+            preds = model(features).cpu().numpy().reshape(-1)
+            target_list += [float(x) for x in list(target)]
+            preds_list += [float(x) for x in list(preds)]
+            timetamps += [float(x) for x in list(ts)]
+    targets = np.asarray(target_list)
+    preds = np.asarray(preds_list)
+    targets_tensor = torch.tensor(target_list)
+    preds_tensor = torch.tensor(preds_list)
+    timetamps = [datetime.fromtimestamp(int(x)) for x in timetamps]
+    loss = float(model.loss(preds_tensor, targets_tensor))
+    mape = float(model.mape(preds_tensor, targets_tensor))
+    return timetamps, targets, preds, loss, mape
+
+
+
 if __name__ == "__main__":
+
     args = get_args()
 
     config = io_tools.load_config_from_yaml(f'{ROOT}/configs/training/{args.config}.yaml')
 
     data_config = io_tools.load_config_from_yaml(f"{ROOT}/configs/data_configs/{config.get('data_config')}.yaml")
-    use_volume = args.use_volume
 
-    if not use_volume:
-        use_volume = config.get('use_volume')
-    train_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
-    val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
-    test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
-
+    use_volume = config.get('use_volume', args.use_volume)
     model, normalize = load_model(config, args.ckpt_path)
 
-    # ADDED FOR REVIN: set target_idx
-    model.target_idx = test_transform.keys.index(model.y_key)
-    # END ADDED FOR REVIN
+    data = pd.read_csv(args.data_path)
+    if 'Date' in data.keys():
+        data['Timestamp'] = [float(time.mktime(datetime.strptime(x, "%Y-%m-%d").timetuple())) for x in data['Date']]
+    data = data.sort_values(by='Timestamp').reset_index()
 
-    data = pd.read_csv(args.data_path, index_col=0)
-
-    data_module = CMambaDataModule(
-        data_config,
-        train_transform=train_transform,
-        val_transform=val_transform,
-        test_transform=test_transform,
-        batch_size=1,
-        distributed_sampler=False,
-        num_workers=1,
-        normalize=normalize,
-    )
-
+    train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    data_module = CMambaDataModule(data_config,
+                                   train_transform=train_transform,
+                                   val_transform=val_transform,
+                                   test_transform=test_transform,
+                                   batch_size=1,
+                                   distributed_sampler=False,
+                                   num_workers=1,
+                                   normalize=normalize,
+                                   )
+    
+    # end_date = "2024-27-10"
     if args.date is None:
         end_ts = max(data['Timestamp']) + 24 * 60 * 60
     else:
@@ -167,7 +174,8 @@ if __name__ == "__main__":
     data = data[data['Timestamp'] >= start_ts - 60 * 60]
 
     txt_file = init_dirs(args, pred_date)
-
+    
+    
     features = {}
     key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
     if use_volume:
@@ -175,8 +183,7 @@ if __name__ == "__main__":
 
     for key in key_list:
         tmp = list(data.get(key))
-        # MODIFIED FOR REVIN: skip normalization if use_revin
-        if normalize and not model.use_revin:
+        if normalize:
             scale = data_module.factors.get(key).get('max') - data_module.factors.get(key).get('min')
             shift = data_module.factors.get(key).get('min')
         else:
@@ -192,21 +199,22 @@ if __name__ == "__main__":
         if key == model.y_key:
             scale_pred = scale
             shift_pred = shift
-    # END MODIFIED FOR REVIN
 
     x = torch.cat([features.get(x) for x in features.keys()], dim=0)
 
     close_idx = -2 if use_volume else -1
-    # MODIFIED FOR REVIN: denormalize today value if not using RevIN
-    today = float(x[close_idx, -1])
-    if normalize and not model.use_revin:
-        today = today * scale_pred + shift_pred
-    # END MODIFIED FOR REVIN
+    today = float(x[close_idx, -1]) * scale_pred + shift_pred
 
     with torch.no_grad():
-        # MODIFIED FOR REVIN: no manual denorm since RevIN handles it
-        pred = float(model(x[None, ...].cuda()).cpu())
-        # END MODIFIED FOR REVIN
+        pred = model(x[None, ...].cuda()).cpu()
+        if normalize:
+            pred = float(pred) * scale_pred + shift_pred
+        elif hasattr(model.model, 'revin') and model.model.revin is not None:
+            pred_tensor = pred.reshape(-1)
+            _, pred_tensor = model.denormalize(None, pred_tensor)
+            pred = float(pred_tensor[0])
+        else:
+            pred = float(pred)
 
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')
@@ -228,3 +236,9 @@ if __name__ == "__main__":
         print_and_write(txt_file, f'Vanilla trade: sell')
     else:
         print_and_write(txt_file, f'Vanilla trade: -')
+
+    
+
+    
+
+

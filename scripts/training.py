@@ -10,11 +10,9 @@ from data_utils.data_transforms import DataTransform
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from pytorch_lightning.loggers import TensorBoardLogger
 import warnings
-# ADDED FOR REVIN: import importlib for dynamic import
-import importlib
-# END ADDED FOR REVIN
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
 
 ROOT = io_tools.get_root(__file__, num_returns=2)
 
@@ -83,17 +81,21 @@ def get_args():
         default=False,   
         action='store_true',          
     )
+
     parser.add_argument(
         '--resume_from_checkpoint',
         default=None,
     )
+
     parser.add_argument(
         '--max_epochs',
         type=int,
         default=200,
     )
+
     args = parser.parse_args()
     return args
+
 
 def save_all_hparams(log_dir, args):
     if not os.path.exists(log_dir):
@@ -105,33 +107,28 @@ def save_all_hparams(log_dir, args):
     with open(path, 'w') as f:
         yaml.dump(save_dict, f)
 
+
 def load_model(config, logger_type):
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
 
-    # MODIFIED FOR REVIN: disable normalize if use_revin
-    if model_config.get('params', {}).get('use_revin', False):
-        model_config['normalize'] = False
-    # END MODIFIED FOR REVIN
     normalize = model_config.get('normalize', False)
     hyperparams = config.get('hyperparams')
     if hyperparams is not None:
         for key in hyperparams.keys():
             model_config.get('params')[key] = hyperparams.get(key)
-    target = model_config.get('target')
-    # MODIFIED FOR REVIN: dynamic import the target class
-    module_path, class_name = target.rsplit('.', 1)
-    module = importlib.import_module(module_path)
-    target_class = getattr(module, class_name)
-    model = target_class(**model_config.get('params'), logger_type=logger_type)
-    # END MODIFIED FOR REVIN
+
+    model_config.get('params')['logger_type'] = logger_type
+    model = io_tools.instantiate_from_config(model_config)
     model.cuda()
     model.train()
     return model, normalize
 
+
 if __name__ == "__main__":
+
     args = get_args()
     pl.seed_everything(args.seed)
     logdir = args.logdir
@@ -149,10 +146,6 @@ if __name__ == "__main__":
 
     model, normalize = load_model(config, args.logger_type)
 
-    # ADDED FOR REVIN: set target_idx
-    model.target_idx = train_transform.keys.index(model.y_key)
-    # END ADDED FOR REVIN
-
     tmp = vars(args)
     tmp.update(config)
 
@@ -165,17 +158,16 @@ if __name__ == "__main__":
     else:
         raise ValueError('Unknown logger type.')
 
-    data_module = CMambaDataModule(
-        data_config,
-        train_transform=train_transform,
-        val_transform=val_transform,
-        test_transform=test_transform,
-        batch_size=args.batch_size,
-        distributed_sampler=True,
-        num_workers=args.num_workers,
-        normalize=normalize,
-        window_size=model.window_size,
-    )
+    data_module = CMambaDataModule(data_config,
+                                   train_transform=train_transform,
+                                   val_transform=val_transform,
+                                   test_transform=test_transform,
+                                   batch_size=args.batch_size,
+                                   distributed_sampler=True,
+                                   num_workers=args.num_workers,
+                                   normalize=normalize,
+                                   window_size=model.window_size,
+                                   )
     
     callbacks = []
     if args.save_checkpoints:
@@ -193,16 +185,15 @@ if __name__ == "__main__":
     max_epochs = config.get('max_epochs', args.max_epochs)
     model.set_normalization_coeffs(data_module.factors)
 
-    trainer = pl.Trainer(
-        accelerator=args.accelerator, 
-        devices=args.devices,
-        max_epochs=max_epochs,
-        enable_checkpointing=args.save_checkpoints,
-        log_every_n_steps=10,
-        logger=logger,
-        callbacks=callbacks,
-        strategy=DDPStrategy(find_unused_parameters=False),
-    )
+    trainer = pl.Trainer(accelerator=args.accelerator, 
+                         devices=args.devices,
+                         max_epochs=max_epochs,
+                         enable_checkpointing=args.save_checkpoints,
+                         log_every_n_steps=10,
+                         logger=logger,
+                         callbacks=callbacks,
+                         strategy = DDPStrategy(find_unused_parameters=False),
+                         )
 
     trainer.fit(model, datamodule=data_module)
     if args.save_checkpoints:

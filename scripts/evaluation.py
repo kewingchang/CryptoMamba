@@ -1,3 +1,4 @@
+# evaluation.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
@@ -12,17 +13,18 @@ import matplotlib.ticker as ticker
 from argparse import ArgumentParser
 from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
+
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import warnings
-# ADDED FOR REVIN: import importlib for dynamic import
-import importlib
-# END ADDED FOR REVIN
-import seaborn as sns
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
+import seaborn as sns
 sns.set_theme(style='whitegrid', context='paper', font_scale=3)
 palette = sns.color_palette('muted')
+
+
 
 ROOT = io_tools.get_root(__file__, num_returns=2)
 
@@ -92,6 +94,7 @@ def get_args():
         default=32,
         help="batch_size",
     )
+
     args = parser.parse_args()
     return args
 
@@ -105,76 +108,79 @@ def print_and_write(file, txt, add_new_line=True):
 def save_all_hparams(log_dir, args):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
+    save_dict = vars(args)
+    save_dict.pop('checkpoint_callback')
+    with open(log_dir + '/hparams.yaml', 'w') as f:
+        yaml.dump(save_dict, f)
 
-# MODIFIED FOR REVIN: update load_model to handle use_revin and dynamic import
+def init_dirs(args, name):
+    path = f'{ROOT}/Results/{name}/{args.config}'
+    if not os.path.isdir(path):
+        os.makedirs(path)
+    txt_file = open(f'{path}/metrics.txt', 'w')
+    plot_path = f'{path}/pred.jpg'
+    return txt_file, plot_path
+
 def load_model(config, ckpt_path):
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
-
-    if model_config.get('params', {}).get('use_revin', False):
-        model_config['normalize'] = False
     normalize = model_config.get('normalize', False)
-
-    hyperparams = config.get('hyperparams')
-    if hyperparams is not None:
-        for key in hyperparams.keys():
-            model_config.get('params')[key] = hyperparams.get(key)
-    target = model_config.get('target')
-    # MODIFIED FOR REVIN: dynamic import the target class
-    module_path, class_name = target.rsplit('.', 1)
-    module = importlib.import_module(module_path)
-    target_class = getattr(module, class_name)
-    model = target_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
-    # END MODIFIED FOR REVIN
+    model_class = io_tools.get_obj_from_str(model_config.get('target'))
+    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
     model.cuda()
     model.eval()
     return model, normalize
 
-def init_dirs(args, name):
-    path = f'{ROOT}/Evaluations/{args.config}/'
-    if not os.path.isdir(path):
-        os.makedirs(path)
-    txt_file = open(f'{path}/{name}.txt', 'w')
-    plot_path = f'{path}/{name}.png'
-    return txt_file, plot_path
+@torch.no_grad()
+def run_model(model, dataloader, factors=None):
+    target_list = []
+    preds_list = []
+    timetamps = []
+    with torch.no_grad():
+        for batch in dataloader:
+            ts = batch.get('Timestamp').numpy().reshape(-1)
+            target = batch.get(model.y_key).numpy().reshape(-1)
+            features = batch.get('features').to(model.device)
+            preds = model(features).cpu().numpy().reshape(-1)
+            if factors is not None:
+                scale = factors.get(model.y_key).get('max') - factors.get(model.y_key).get('min')
+                shift = factors.get(model.y_key).get('min')
+                target = target * scale + shift
+                preds = preds * scale + shift
+            elif hasattr(model.model, 'revin') and model.model.revin is not None:
+                preds_tensor = torch.tensor(preds).to(model.device)
+                _, preds_tensor = model.denormalize(None, preds_tensor)
+                preds = preds_tensor.cpu().numpy()
+            target_list += [float(x) for x in list(target)]
+            preds_list += [float(x) for x in list(preds)]
+            timetamps += [float(x) for x in list(ts)]
 
-def run_model(model, dataloader, factors):
-    timestamps = []
-    targets = []
-    preds = []
-    for batch in dataloader:
-        x = batch['features']
-        y = batch[model.y_key]
-        ts = batch['Timestamp']
-        # MODIFIED FOR REVIN: skip denormalization if use_revin
-        if factors is not None and not model.use_revin:
-            scale = factors.get(model.y_key).get('max') - factors.get(model.y_key).get('min')
-            shift = factors.get(model.y_key).get('min')
-            y = y * scale + shift
-        # END MODIFIED FOR REVIN
-        with torch.no_grad():
-            pred = model(x.cuda()).cpu().numpy()
-        timestamps += list(ts.numpy())
-        targets += list(y.numpy())
-        preds += list(pred)
-    targets = np.array(targets)
-    preds = np.array(preds)
-    mse = np.mean((targets - preds)**2)
-    l1 = np.mean(np.abs(targets - preds))
-    mape = np.mean(np.abs((targets - preds) / (targets + 1e-10)))
-    return timestamps, targets, preds, mse, mape, l1
+    targets = np.asarray(target_list)
+    preds = np.asarray(preds_list)
+    targets_tensor = torch.tensor(target_list)
+    preds_tensor = torch.tensor(preds_list)
+    timetamps = [datetime.fromtimestamp(int(x)) for x in timetamps]
+    mse = float(model.mse(preds_tensor, targets_tensor))
+    mape = float(model.mape(preds_tensor, targets_tensor))
+    l1 = float(model.l1(preds_tensor, targets_tensor))
+    return timetamps, targets, preds, mse, mape, l1
+
+
 
 if __name__ == "__main__":
+
     args = get_args()
     pl.seed_everything(args.seed)
+    logdir = args.logdir
 
     config = io_tools.load_config_from_yaml(f'{ROOT}/configs/training/{args.config}.yaml')
+    name = config.get('name', args.expname)
 
     data_config = io_tools.load_config_from_yaml(f"{ROOT}/configs/data_configs/{config.get('data_config')}.yaml")
-    use_volume = args.use_volume
 
+    use_volume = args.use_volume
     if not use_volume:
         use_volume = config.get('use_volume')
     train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
@@ -182,61 +188,65 @@ if __name__ == "__main__":
     test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
 
     model, normalize = load_model(config, args.ckpt_path)
+    data_module = CMambaDataModule(data_config,
+                                   train_transform=train_transform,
+                                   val_transform=val_transform,
+                                   test_transform=test_transform,
+                                   batch_size=args.batch_size,
+                                   distributed_sampler=False,
+                                   num_workers=args.num_workers,
+                                   normalize=normalize,
+                                   )
 
-    # ADDED FOR REVIN: set target_idx
-    model.target_idx = train_transform.keys.index(model.y_key)
-    # END ADDED FOR REVIN
-
-    data_module = CMambaDataModule(
-        data_config,
-        train_transform=train_transform,
-        val_transform=val_transform,
-        test_transform=test_transform,
-        batch_size=args.batch_size,
-        distributed_sampler=False,
-        num_workers=args.num_workers,
-        normalize=normalize,
-    )
-
-    dataloader_list = [data_module.train_dataloader(), data_module.val_dataloader(), data_module.test_dataloader()]
+    train_loader = data_module.train_dataloader()
+    val_loader = data_module.val_dataloader()
+    test_loader = data_module.test_dataloader()
+    dataloader_list = [train_loader, val_loader, test_loader]
     titles = ['Train', 'Val', 'Test']
     colors = ['red', 'green', 'magenta']
 
-    factors = None
-    if normalize:
-        factors = data_module.factors
+    factors = data_module.factors if normalize else None
+
+
     all_targets = []
     all_timestamps = []
 
-    f, plot_path = init_dirs(args, config.get('name', args.expname))
+
+    f, plot_path = init_dirs(args, name)
 
     plt.figure(figsize=(20, 10))
     print_format = '{:^7} {:^15} {:^10} {:^7} {:^10}'
     txt = print_format.format('Split', 'MSE', 'RMSE', 'MAPE', 'MAE')
     print_and_write(f, txt)
     for key, dataloader, c in zip(titles, dataloader_list, colors):
-        timestamps, targets, preds, mse, mape, l1 = run_model(model, dataloader, factors)
-        all_timestamps += timestamps
+        timstamps, targets, preds, mse, mape, l1 = run_model(model, dataloader, factors)
+        all_timestamps += timstamps
         all_targets += list(targets)
         txt = print_format.format(key, round(mse, 3), round(np.sqrt(mse), 3), round(mape, 5), round(l1, 3))
         print_and_write(f, txt)
+        # ADD BY KEWING
+        # 新加：计算方向准确率、胜率、平均交易亏损、最大交易亏损（只针对 Test）
         if key == 'Test':
-            prev_targets = np.roll(targets, 1)[1:]
-            prev_preds = np.roll(preds, 1)[1:]
-            actual_directions = targets[1:] > prev_targets
-            pred_directions = preds[1:] > prev_preds
+            prev_targets = np.roll(targets, 1)[1:]  # 前一实际值，忽略首 NaN
+            prev_preds = np.roll(preds, 1)[1:]      # 前一预测值，忽略首 NaN
+            actual_directions = targets[1:] > prev_targets  # 实际涨跌 (True=涨)
+            pred_directions = preds[1:] > prev_preds        # 预测涨跌 (True=涨)
             direction_acc = np.mean(actual_directions == pred_directions) * 100
             print(f"Test Direction Accuracy: {direction_acc:.2f}%")
-            actual_returns = (targets[1:] - prev_targets) / prev_targets
-            trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)
-            win_rate = np.mean(trade_pnl > 0) * 100
-            losses = trade_pnl[trade_pnl < 0]
-            avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0
-            max_loss = np.min(trade_pnl) * 100
+            
+            # 计算交易 P&L（简单策略：预测涨做多、预测跌做空）
+            actual_returns = (targets[1:] - prev_targets) / prev_targets  # 实际回报率
+            trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)  # 做多/做空回报
+            win_rate = np.mean(trade_pnl > 0) * 100  # 胜率（盈利交易比例）
+            losses = trade_pnl[trade_pnl < 0]  # 亏损交易
+            avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0  # 平均亏损（%）
+            max_loss = np.min(trade_pnl) * 100  # 最大单笔亏损（%）
             print(f"Test Win Rate: {win_rate:.2f}%")
             print(f"Test Average Trade Loss: {avg_loss:.2f}%")
             print(f"Test Maximum Trade Loss: {max_loss:.2f}%")
-        sns.lineplot(x=timestamps, y=preds, color=c, linewidth=2.5, label=key)
+        # 
+        # plt.plot(timstamps, preds, color=c)
+        sns.lineplot(x=timstamps, y=preds, color=c, linewidth=2.5, label=key)
 
     sns.lineplot(x=all_timestamps, y=all_targets, color='blue', zorder=0, linewidth=2.5, label='Target')
     plt.legend()
@@ -247,3 +257,4 @@ if __name__ == "__main__":
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: '{:,.0f}K'.format(x/1000)))
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     f.close()
+
