@@ -1,9 +1,10 @@
+# configs/models/CryptoMamba/v2.yaml
 target: pl_modules.cmamba_module.CryptoMambaModule
-params: 
+params:
     num_features: 6
-    hidden_dims: [14, 16, 32, 1]
+    hidden_dims: [6, 16, 32, 1]
     d_states: 64
     layer_density: 4
     loss: 'rmse'
-    use_revin: True  # ADDED FOR REVIN: enable RevIN
-normalize: False  # MODIFIED FOR REVIN: disable min-max normalization
+    revin: True
+normalize: False
