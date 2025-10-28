@@ -15,6 +15,9 @@ from data_utils.data_transforms import DataTransform
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import warnings
+# ADDED FOR REVIN: import importlib for dynamic import
+import importlib
+# END ADDED FOR REVIN
 import seaborn as sns
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -103,7 +106,7 @@ def save_all_hparams(log_dir, args):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-# MODIFIED FOR REVIN: update load_model to handle use_revin
+# MODIFIED FOR REVIN: update load_model to handle use_revin and dynamic import
 def load_model(config, ckpt_path):
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
@@ -119,12 +122,15 @@ def load_model(config, ckpt_path):
         for key in hyperparams.keys():
             model_config.get('params')[key] = hyperparams.get(key)
     target = model_config.get('target')
-    model = target(**model_config.get('params'))
-    model = model.load_from_checkpoint(ckpt_path, **model_config.get('params'))
+    # MODIFIED FOR REVIN: dynamic import the target class
+    module_path, class_name = target.rsplit('.', 1)
+    module = importlib.import_module(module_path)
+    target_class = getattr(module, class_name)
+    model = target_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
+    # END MODIFIED FOR REVIN
     model.cuda()
     model.eval()
     return model, normalize
-# END MODIFIED FOR REVIN
 
 def init_dirs(args, name):
     path = f'{ROOT}/Evaluations/{args.config}/'
@@ -221,7 +227,6 @@ if __name__ == "__main__":
             pred_directions = preds[1:] > prev_preds
             direction_acc = np.mean(actual_directions == pred_directions) * 100
             print(f"Test Direction Accuracy: {direction_acc:.2f}%")
-            
             actual_returns = (targets[1:] - prev_targets) / prev_targets
             trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)
             win_rate = np.mean(trade_pnl > 0) * 100
