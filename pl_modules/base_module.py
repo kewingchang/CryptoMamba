@@ -43,7 +43,7 @@ class RevIN(nn.Module):
         return x
 
     def _denormalize(self, x, target_idx=None):
-        # make sure x is (b,1,1) for broadcasting
+        # ensure x is (b,1,1) for broadcasting
         if x.ndim == 1:
             x = x.unsqueeze(-1).unsqueeze(-1)   # (b,) -> (b,1,1)
         elif x.ndim == 2:
