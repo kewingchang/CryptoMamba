@@ -1,6 +1,7 @@
 torch
 torchvision
 torchaudio
+einops
 setuptools
 pyaml
 lightning
