@@ -13,6 +13,9 @@ from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
 from utils.trade import buy_sell_vanilla, buy_sell_smart
 import warnings
+# ADDED FOR REVIN: import importlib for dynamic import
+import importlib
+# END ADDED FOR REVIN
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -105,15 +108,18 @@ def load_model(config, ckpt_path):
     if model_config.get('params', {}).get('use_revin', False):
         model_config['normalize'] = False
     # END MODIFIED FOR REVIN
-
     normalize = model_config.get('normalize', False)
     hyperparams = config.get('hyperparams')
     if hyperparams is not None:
         for key in hyperparams.keys():
             model_config.get('params')[key] = hyperparams.get(key)
     target = model_config.get('target')
-    model = target(**model_config.get('params'))
-    model = model.load_from_checkpoint(ckpt_path, **model_config.get('params'))
+    # MODIFIED FOR REVIN: dynamic import the target class
+    module_path, class_name = target.rsplit('.', 1)
+    module = importlib.import_module(module_path)
+    target_class = getattr(module, class_name)
+    model = target_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
+    # END MODIFIED FOR REVIN
     model.cuda()
     model.eval()
     return model, normalize
@@ -191,14 +197,16 @@ if __name__ == "__main__":
     x = torch.cat([features.get(x) for x in features.keys()], dim=0)
 
     close_idx = -2 if use_volume else -1
-    # MODIFIED FOR REVIN: today value should be denormalized if not using RevIN
+    # MODIFIED FOR REVIN: denormalize today value if not using RevIN
     today = float(x[close_idx, -1])
     if normalize and not model.use_revin:
         today = today * scale_pred + shift_pred
     # END MODIFIED FOR REVIN
 
     with torch.no_grad():
-        pred = float(model(x[None, ...].cuda()).cpu())  # MODIFIED FOR REVIN: no manual denorm since RevIN handles it
+        # MODIFIED FOR REVIN: no manual denorm since RevIN handles it
+        pred = float(model(x[None, ...].cuda()).cpu())
+        # END MODIFIED FOR REVIN
 
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')
