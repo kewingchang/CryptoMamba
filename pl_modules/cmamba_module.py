@@ -1,7 +1,6 @@
 import torch.nn as nn
 from models.cmamba import CMamba
-from .base_module import BaseModule
-from einops import rearrange  # ADDED FOR REVIN: import rearrange
+from .base_module import BaseModule, RevIN   # MODIFIED: import RevIN from base_module
 
 class CryptoMambaModule(BaseModule):
 
@@ -12,25 +11,25 @@ class CryptoMambaModule(BaseModule):
         norm_layer=nn.LayerNorm,
         d_conv=4,
         layer_density=1,
-        expand=2, 
-        mlp_ratio=0, 
-        drop=0.0, 
+        expand=2,
+        mlp_ratio=0,
+        drop=0.0,
         num_classes=None,
         d_states=16,
         use_checkpoint=False,
-        lr=0.0002, 
+        lr=0.0002,
         lr_step_size=50,
         lr_gamma=0.1,
-        weight_decay=0.0, 
+        weight_decay=0.0,
         logger_type=None,
         window_size=14,
         y_key='Close',
         optimizer='adam',
         mode='default',
         loss='rmse',
-        use_revin=False,  # ADDED FOR REVIN: add use_revin
+        use_revin=False,          # ADDED FOR REVIN: add use_revin
         **kwargs
-    ): 
+    ):
         super().__init__(
             lr=lr,
             lr_step_size=lr_step_size,
@@ -57,9 +56,9 @@ class CryptoMambaModule(BaseModule):
             norm_layer=norm_layer,
             d_conv=d_conv,
             layer_density=layer_density,
-            expand=expand, 
-            mlp_ratio=mlp_ratio, 
-            drop=drop, 
+            expand=expand,
+            mlp_ratio=mlp_ratio,
+            drop=drop,
             num_classes=num_classes,
             d_states=d_states,
             use_checkpoint=use_checkpoint,
