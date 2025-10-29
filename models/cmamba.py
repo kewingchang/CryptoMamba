@@ -479,10 +479,10 @@ class CMamba(nn.Module):
     def forward(self, x):
         # x = self.norm(x)
         if self.revin is not None:
-            print("Before RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 打印每个通道均值
+            # print("Before RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 打印每个通道均值
             x = x.transpose(1, 2)  # (B, window_size, num_features)
             x = self.revin(x, 'norm')
-            print("After RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 应接近0/
+            # print("After RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 应接近0/
             for layer in self.blocks:
                 x = layer(x)
             x = x[:, -1, 0]  # (B,)
