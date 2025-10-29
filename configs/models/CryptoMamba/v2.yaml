@@ -2,7 +2,7 @@
 target: pl_modules.cmamba_module.CryptoMambaModule
 params:
     num_features: 7
-    hidden_dims: [6, 16, 32, 1]
+    hidden_dims: [7, 16, 32, 1]
     d_states: 64
     layer_density: 4
     loss: 'rmse'
