@@ -64,6 +64,7 @@ class BaseModule(pl.LightningModule):
             y_hat = y_hat * scale + shift
         elif hasattr(self.model, 'revin') and self.model.revin is not None:
             re = self.model.revin
+            print("Before denorm: y_hat=", y_hat.mean(), "stdev=", re.stdev.mean())  # 检查stats是否从norm继承
             target_idx = self.target_channel
             if re.affine:
                 y_hat = y_hat - re.affine_bias[target_idx]
@@ -73,6 +74,7 @@ class BaseModule(pl.LightningModule):
                 y_hat = y_hat + re.last[:, 0, target_idx]
             else:
                 y_hat = y_hat + re.mean[:, 0, target_idx]
+            print("After denorm: y_hat=", y_hat.mean())  # 应恢复原始尺度
         return y, y_hat
 
     def training_step(self, batch, batch_idx):
