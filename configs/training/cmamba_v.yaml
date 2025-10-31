@@ -12,3 +12,4 @@ hyperparams:
     # lr_step_size: 100 #StepLR
     # lr_gamma: 0.5 #StepLR
     weight_decay: 0.001
+    # eta_min: 1e-6 #not supported temporary
