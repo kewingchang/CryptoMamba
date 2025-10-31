@@ -30,6 +30,7 @@ class CryptoMambaModule(BaseModule):
         mode='default',
         loss='rmse',
         revin=False,
+        max_epochs=1000,  # 新增 max_epochs 参数
         **kwargs
     ): 
         super().__init__(lr=lr,
@@ -42,9 +43,8 @@ class CryptoMambaModule(BaseModule):
                          mode=mode,
                          window_size=window_size,
                          loss=loss,
+                         max_epochs=max_epochs,  # 传递到 super
                          )
-        # assert window_size == hidden_dims[0]  # Removed this assert to accommodate RevIN integration
-
         self.model = CMamba(
             num_features=num_features,
             hidden_dims=hidden_dims,

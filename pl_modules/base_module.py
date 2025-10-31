@@ -5,6 +5,7 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from models.cmamba import CMamba
 from torchmetrics.regression import MeanAbsolutePercentageError as MAPE
+from torch.optim.lr_scheduler import CosineAnnealingLR  # 新增导入 CosineAnnealingLR
     
 
 class BaseModule(pl.LightningModule):
@@ -21,6 +22,7 @@ class BaseModule(pl.LightningModule):
         optimizer='adam',
         mode='default',
         loss='rmse',
+        max_epochs=1000,  # 新增 max_epochs 参数
     ):
         super().__init__()
 
@@ -36,6 +38,7 @@ class BaseModule(pl.LightningModule):
         self.window_size = window_size
         self.loss = loss
         self.target_channel = 4  # Index for 'Close' in keys
+        self.max_epochs = max_epochs  # 新增保存 max_epochs
 
         # self.loss = lambda x, y: torch.sqrt(tmp(x, y))
         self.mse = nn.MSELoss()
@@ -158,10 +161,7 @@ class BaseModule(pl.LightningModule):
             )
         else:
             raise ValueError(f'Unimplemented optimizer {self.optimizer}')
-        scheduler = torch.optim.lr_scheduler.StepLR(optim, 
-                                                    self.lr_step_size, 
-                                                    self.lr_gamma
-                                                    )
+        scheduler = CosineAnnealingLR(optim, T_max=self.max_epochs, eta_min=1e-6)  # 新增 CosineAnnealingLR
         return [optim], [scheduler]
 
     def lr_scheduler_step(self, scheduler, *args, **kwargs):
