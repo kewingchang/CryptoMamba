@@ -28,9 +28,10 @@ class CryptoMambaModule(BaseModule):
         y_key='Close',
         optimizer='adam',
         mode='default',
-        loss='rmse',
+        loss_type='rmse',
         revin=False,
         max_epochs=1000,  # 新增 max_epochs 参数
+        alpha=0.7,  # 新增 alpha
         **kwargs
     ): 
         super().__init__(lr=lr,
@@ -42,7 +43,8 @@ class CryptoMambaModule(BaseModule):
                          optimizer=optimizer,
                          mode=mode,
                          window_size=window_size,
-                         loss=loss,
+                         loss_type=loss_type,
+                         alpha=alpha,  # 传给 super
                          max_epochs=max_epochs,  # 传递到 super
                          )
         self.model = CMamba(
