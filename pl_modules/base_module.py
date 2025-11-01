@@ -95,14 +95,10 @@ class BaseModule(pl.LightningModule):
         mape = self.mape(y_hat, y)
         l1 = self.l1(y_hat, y)
 
-        # 新增：计算方向损失 (BCE)
-        # pred_direction = (y_hat > y_old).float()  # 预测涨跌：1=涨, 0=跌
-        # true_direction = (y > y_old).float()      # 真实涨跌
-        # bce_loss = self.bce(pred_direction, true_direction)  # BCE 计算
-
-        pred_logit = y_hat - y_old
+        # 新增：计算方向损失 (BCE logit)
+        pred_logit = y_hat - y_old # 预测涨跌
         true_direction = (y > y_old).float()      # 真实涨跌
-        bce_loss = self.bce(pred_logit, true_direction)
+        bce_loss = self.bce(pred_logit, true_direction) # BCE 计算
 
         # 混合损失：根据 loss_type
         if self.loss_type == 'hybrid':
@@ -133,9 +129,7 @@ class BaseModule(pl.LightningModule):
         mape = self.mape(y_hat, y)
         l1 = self.l1(y_hat, y)
 
-  #       pred_direction = (y_hat > y_old).float()
-  #       true_direction = (y > y_old).float()
-        # bce_loss = self.bce(pred_direction, true_direction)  # 新增
+        # BCE logit 计算
         pred_logit = y_hat - y_old
         true_direction = (y > y_old).float()      # 真实涨跌
         bce_loss = self.bce(pred_logit, true_direction)
@@ -161,10 +155,8 @@ class BaseModule(pl.LightningModule):
         rmse = torch.sqrt(mse)
         mape = self.mape(y_hat, y)
         l1 = self.l1(y_hat, y)
-        
-        # pred_direction = (y_hat > y_old).float()
-        # true_direction = (y > y_old).float()
-        # bce_loss = self.bce(pred_direction, true_direction)  # 新增
+
+        # BCE logit计算
         pred_logit = y_hat - y_old
         true_direction = (y > y_old).float()      # 真实涨跌
         bce_loss = self.bce(pred_logit, true_direction)
