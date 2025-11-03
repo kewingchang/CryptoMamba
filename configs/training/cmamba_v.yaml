@@ -4,7 +4,7 @@ model: 'CMamba_v2'
 name: 'CMamba'
 max_epochs: 1000
 use_volume: True
-additional_features: []
+additional_features: ["Return"]
 
 hyperparams:
     optimizer: 'adam'
