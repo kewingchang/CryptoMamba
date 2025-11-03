@@ -3,8 +3,8 @@ model: 'CMamba_v2'
 
 name: 'CMamba'
 max_epochs: 1000
-use_volume: True
-additional_features: ["month_sin","month_cos"]
+use_volume: False
+additional_features: ["marketCap"]
 
 hyperparams:
     optimizer: 'adam'
