@@ -1,3 +1,4 @@
+# training.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
@@ -109,7 +110,7 @@ def save_all_hparams(log_dir, args):
         yaml.dump(save_dict, f)
 
 
-def load_model(config, logger_type):
+def load_model(config, logger_type, max_epochs):  # 修改：添加 max_epochs 参数
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
@@ -122,6 +123,8 @@ def load_model(config, logger_type):
             model_config.get('params')[key] = hyperparams.get(key)
 
     model_config.get('params')['logger_type'] = logger_type
+    model_config.get('params')['max_epochs'] = max_epochs  # 新增：将 max_epochs 添加到 params
+
     model = io_tools.instantiate_from_config(model_config)
     model.cuda()
     model.train()
@@ -132,6 +135,7 @@ if __name__ == "__main__":
 
     args = get_args()
     pl.seed_everything(args.seed)
+
     logdir = args.logdir
 
     config = io_tools.load_config_from_yaml(f'{ROOT}/configs/training/{args.config}.yaml')
@@ -145,7 +149,7 @@ if __name__ == "__main__":
     val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
     test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
 
-    model, normalize = load_model(config, args.logger_type)
+    model, normalize = load_model(config, args.logger_type, args.max_epochs)  # 修改：传入 args.max_epochs
 
     tmp = vars(args)
     tmp.update(config)
@@ -187,7 +191,7 @@ if __name__ == "__main__":
     early_stop_callback = EarlyStopping(
         monitor="val/rmse",
         min_delta=0.001,
-        patience=50,
+        patience=100,
         verbose=True,
         mode="min"
     )
