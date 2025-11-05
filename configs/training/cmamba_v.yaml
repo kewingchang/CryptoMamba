@@ -4,7 +4,7 @@ model: 'CMamba_v2'
 name: 'CMamba'
 max_epochs: 1000
 use_volume: False
-additional_features: ["marketCap","EMA_8","EMA_21","EMA_55"]
+additional_features: ["marketCap","EMA_9","EMA_26","EMA_200"]
 
 hyperparams:
     optimizer: 'adam'
