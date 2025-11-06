@@ -4,7 +4,7 @@ model: 'CMamba_v2'
 name: 'CMamba'
 max_epochs: 1000
 use_volume: False
-additional_features: ["marketCap","SAREXT"]
+additional_features: ["marketCap","T3_5"]
 
 hyperparams:
     optimizer: 'adam'
