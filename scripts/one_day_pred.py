@@ -180,7 +180,8 @@ if __name__ == "__main__":
     key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
     if use_volume:
         key_list.append('Volume')
-
+    key_list += config.get('additional_features', [])  # 新增：包含 additional_features，如 ['marketCap']
+    
     for key in key_list:
         tmp = list(data.get(key))
         if normalize:
@@ -200,9 +201,12 @@ if __name__ == "__main__":
             scale_pred = scale
             shift_pred = shift
 
-    x = torch.cat([features.get(x) for x in features.keys()], dim=0)
+    x = torch.cat([features.get(x) for x in key_list], dim=0)  # 注意：这里使用 key_list，确保顺序与训练一致
 
-    close_idx = -2 if use_volume else -1
+    # close_idx = -2 if use_volume else -1  # 如果添加了 marketCap，close_idx 需调整为 key_list.index('Close') - len(key_list)，但当前 -1 是 marketCap，-2 是 Close？不。
+    # 修正：close_idx 应基于 key_list 的位置；当前 key_list[-2] 是 Close（因为最后是 marketCap），所以 close_idx = -2 if not use_volume else 调整
+    # 但原代码 close_idx = -2 if use_volume else -1；由于 use_volume=False，且多了 marketCap，Close 是倒数第二，所以 close_idx = -2
+    close_idx = key_list.index('Close')  # 推荐：用 index 动态获取，避免硬编码
     today = float(x[close_idx, -1]) * scale_pred + shift_pred
 
     with torch.no_grad():
@@ -210,12 +214,9 @@ if __name__ == "__main__":
         if normalize:
             pred = float(pred) * scale_pred + shift_pred
         elif hasattr(model.model, 'revin') and model.model.revin is not None:
-            pred_tensor = pred.reshape(-1)
-            # _, pred_tensor = model.denormalize(None, pred_tensor)
             pred_tensor = pred.reshape(-1).to(model.device)  # Add .to(model.device)
             _, pred_tensor = model.denormalize(None, pred_tensor)
             pred = float(pred_tensor.cpu()[0])  # Move back to CPU if needed
-            # pred = float(pred_tensor[0])
         else:
             pred = float(pred)
 
