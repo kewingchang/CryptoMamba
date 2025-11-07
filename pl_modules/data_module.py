@@ -27,6 +27,16 @@ def worker_init_fn(worker_id):
     else:
         seed = base_seed
 
+def custom_collate(batch):
+    collated = {}
+    for key in batch[0].keys():
+        data = [d[key] for d in batch]
+        if isinstance(data[0], torch.Tensor):
+            collated[key] = torch.stack(data).float()  # 强制转为 float
+        else:
+            collated[key] = data  # 非 tensor 保持
+    return collated
+
 class CMambaDataModule(pl.LightningDataModule):
 
     def __init__(
@@ -114,13 +124,14 @@ class CMambaDataModule(pl.LightningDataModule):
         sampler = torch.utils.data.DistributedSampler(dataset) if self.distributed_sampler else None
         
         dataloader = torch.utils.data.DataLoader(
-            dataset=dataset,
-            batch_size=batch_size,
-            num_workers=self.num_workers,
-            worker_init_fn=worker_init_fn,
-            sampler=sampler,
-            drop_last=False
-        )
+                    dataset=dataset,
+                    batch_size=batch_size,
+                    num_workers=self.num_workers,
+                    worker_init_fn=worker_init_fn,
+                    sampler=sampler,
+                    drop_last=False,
+                    collate_fn=custom_collate if data_split == 'train' else None,  # 只在 train 加，val/test 默认
+                )
         return dataloader
 
     def train_dataloader(self):
