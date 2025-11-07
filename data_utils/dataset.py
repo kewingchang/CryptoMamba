@@ -1,3 +1,4 @@
+# dataset.py
 import os
 import torch
 import time
@@ -25,6 +26,7 @@ class CMambaDataset(torch.utils.data.Dataset):
         self.transform = transform
         self.window_size = window_size
         self.data_module = None  # 添加
+        self.split = split  # 新增，判断 train
             
         print('{} data points loaded as {} split.'.format(len(self), split))
 
@@ -32,11 +34,17 @@ class CMambaDataset(torch.utils.data.Dataset):
         return max(0, len(self.data) - self.window_size - 1)
 
     def __getitem__(self, i: int):
-        sample = self.data.iloc[i: i + self.window_size + 1]
-        sample = self.transform(sample)
+        window = self.data.iloc[i: i + self.window_size + 1]
+        other_window = None
+        if self.split == 'train' and random.random() < 0.5:  # 假设 prob=0.5，可从 transform.mixup_prob 读
+            other_i = random.randint(0, len(self) - 1)  # 随机另一个索引
+            other_window = self.data.iloc[other_i: other_i + self.window_size + 1]
+        sample = self.transform(window, other_window)  # 传 other_window
         return sample
+    
     def set_data_module(self, data_module):  # 添加
             self.data_module = data_module
+
     
 class DataConverter:
     def __init__(self, config) -> None:
