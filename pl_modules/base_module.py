@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 from models.cmamba import CMamba
 from torchmetrics.regression import MeanAbsolutePercentageError as MAPE
 from torch.optim.lr_scheduler import CosineAnnealingLR  # 已存在
+from torch.nn import SmoothL1Loss  # 新增
 
 class BaseModule(pl.LightningModule):
 
@@ -39,6 +40,8 @@ class BaseModule(pl.LightningModule):
         self.loss_type = loss_type  # 改名为 loss_type，以区分混合
         self.max_epochs = max_epochs
         self.alpha = alpha  # 新增权重
+
+        self.smooth_l1 = SmoothL1Loss(beta=0.5)  # 新增
 
         self.target_channel = 4  # Index for 'Close' in keys
 
@@ -99,10 +102,12 @@ class BaseModule(pl.LightningModule):
         pred_logit = y_hat - y_old # 预测涨跌
         true_direction = (y > y_old).float()      # 真实涨跌
         bce_loss = self.bce(pred_logit, true_direction) # BCE 计算
+        smooth_l1_loss = self.smooth_l1(y_hat, y)  # 新增smooth_l1_loss
 
         # 混合损失：根据 loss_type
         if self.loss_type == 'hybrid':
-            loss = self.alpha * rmse + (1 - self.alpha) * bce_loss  # 加权和（用 rmse 以匹配原损失）
+            loss = self.alpha * smooth_l1_loss + (1 - self.alpha) * bce_loss
+            # loss = self.alpha * rmse + (1 - self.alpha) * bce_loss  # 加权和（用 rmse 以匹配原损失）
         elif self.loss_type == 'rmse':
             loss = rmse  # 原损失
         # ... 其他 elif 如 'mse' 等保持不变
@@ -113,6 +118,7 @@ class BaseModule(pl.LightningModule):
         self.log("train/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("train/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("train/bce", bce_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 BCE log
+        self.log("train/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
 
         return loss  # 返回总损失
 
@@ -133,12 +139,14 @@ class BaseModule(pl.LightningModule):
         pred_logit = y_hat - y_old
         true_direction = (y > y_old).float()      # 真实涨跌
         bce_loss = self.bce(pred_logit, true_direction)
+        smooth_l1_loss = self.smooth_l1(y_hat, y)  # 新增smooth_l1_loss
 
         self.log("val/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
         self.log("val/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("val/bce", bce_loss.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=True) 
+        self.log("val/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
         return {
             "val_loss": mse,
         }
@@ -160,12 +168,14 @@ class BaseModule(pl.LightningModule):
         pred_logit = y_hat - y_old
         true_direction = (y > y_old).float()      # 真实涨跌
         bce_loss = self.bce(pred_logit, true_direction)
+        smooth_l1_loss = self.smooth_l1(y_hat, y)  # 新增smooth_l1_loss
 
         self.log("test/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
         self.log("test/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("test/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("test/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("test/bce", bce_loss.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=True) 
+        self.log("test/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
         return {
             "test_loss": mse,
         }
