@@ -7,6 +7,26 @@ from models.cmamba import CMamba
 from torchmetrics.regression import MeanAbsolutePercentageError as MAPE
 from torch.optim.lr_scheduler import CosineAnnealingLR  # 已存在
 from torch.nn import SmoothL1Loss  # 新增
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  # 修改：导入 CosineAnnealingWarmRestarts 
+
+
+class WarmupCosineScheduler(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, warmup_epochs, max_epochs, eta_min=1e-6, warmup_start_ratio=0.1):  # 新增 warmup_start_ratio，避免从 0 开始
+        self.warmup_epochs = warmup_epochs
+        self.cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=eta_min)  # 修改：用 CosineAnnealingWarmRestarts 替换 CosineAnnealingLR
+        self.warmup_start_ratio = warmup_start_ratio  # 新增：起始 lr 比例 (e.g., 0.1 * base_lr)
+        super().__init__(optimizer)
+
+    def get_lr(self):
+        if self.last_epoch < self.warmup_epochs:
+            return [base_lr * self.warmup_start_ratio + (base_lr - base_lr * self.warmup_start_ratio) * (self.last_epoch + 1) / self.warmup_epochs for base_lr in self.base_lrs]  # 修改：从 base_lr * ratio 开始线性升
+        else:
+            return self.cosine_scheduler.get_lr()
+
+    def step(self, epoch=None):
+        super().step(epoch)
+        if self.last_epoch >= self.warmup_epochs:
+            self.cosine_scheduler.step()  # 新增：调用 cosine_scheduler.step() 更新内部状态
 
 
 class FocalLoss(nn.Module):
@@ -133,7 +153,7 @@ class BaseModule(pl.LightningModule):
             loss = rmse  # 原损失
         # ... 其他 elif 如 'mse' 等保持不变
 
-        # 日志记录（新增 BCE log）
+        # 日志记录
         self.log("train/mse", mse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("train/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("train/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
@@ -212,7 +232,10 @@ class BaseModule(pl.LightningModule):
             )
         else:
             raise ValueError(f'Unimplemented optimizer {self.optimizer}')
-        scheduler = CosineAnnealingLR(optim, T_max=self.max_epochs, eta_min=1e-6)  # 新增 CosineAnnealingLR
+        # 新增 CosineAnnealingLR
+        # scheduler = CosineAnnealingLR(optim, T_max=self.max_epochs, eta_min=1e-6)
+        # 新增 CosineAnnealingLR with warmup
+        scheduler = WarmupCosineScheduler(optim, warmup_epochs=10, max_epochs=self.max_epochs)
         return [optim], [scheduler]
 
     def lr_scheduler_step(self, scheduler, *args, **kwargs):
