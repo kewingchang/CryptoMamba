@@ -3,7 +3,7 @@ target: pl_modules.cmamba_module.CryptoMambaModule
 params:
     num_features: 22
     hidden_dims: [22, 16, 32, 1]
-    d_states: 128
-    layer_density: 6
+    d_states: 64
+    layer_density: 4
     revin: True
 normalize: False
