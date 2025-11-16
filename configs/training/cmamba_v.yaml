@@ -4,7 +4,7 @@ model: 'CMamba_v2'
 name: 'CMamba'
 max_epochs: 1000
 use_volume: False
-additional_features: []
+additional_features: ["vol_current", "ITS_9", "trend_ichimoku_conv", "BB_Upper", "volatility_ui", "PSAR", "marketCap", "MEDPRICE", "TYPPRICE", "VWAP", "DX_14", "BB_Upper_5", "AVGPRICE", "ADDF_pct", "ADDF_diff", "TRANGE", "High_to_Low_Ratio"]
 
 hyperparams:
     optimizer: 'adam'
