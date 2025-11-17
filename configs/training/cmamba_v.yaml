@@ -3,7 +3,7 @@ model: 'CMamba_v2'
 
 name: 'CMamba'
 max_epochs: 1000
-use_volume: False
+use_volume: True
 additional_features: ["vol_current"]
 
 hyperparams:
