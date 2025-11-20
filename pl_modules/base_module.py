@@ -81,7 +81,8 @@ class BaseModule(pl.LightningModule):
 
         self.smooth_l1 = SmoothL1Loss(beta=0.5)  # 新增
 
-        self.target_channel = 4  # Index for 'Close' in keys
+        # self.target_channel = 4  # Index for 'Close' in keys
+        self.target_channel = 3
 
         self.mse = nn.MSELoss()
         self.l1 = nn.L1Loss()
