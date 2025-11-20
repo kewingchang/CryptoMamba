@@ -5,7 +5,8 @@ import numpy as np  # 新增 np for Beta 采样
 class DataTransform:
     def __init__(self, is_train, use_volume=False, additional_features=[], mixup_alpha=0.5, mixup_prob=0.3):
         self.is_train = is_train
-        self.keys = ['Timestamp', 'Open', 'High', 'Low', 'Close']
+        # self.keys = ['Timestamp', 'Open', 'High', 'Low', 'Close']
+        self.keys = ['Open', 'High', 'Low', 'Close']
         if use_volume:
             self.keys.append('Volume')
         self.keys += additional_features
