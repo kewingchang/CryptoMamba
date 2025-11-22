@@ -46,6 +46,21 @@ class DataTransform:
                 output[key] = lambda_ * output[key] + (1 - lambda_) * other_data[-1]
                 output[f'{key}_old'] = lambda_ * output[f'{key}_old'] + (1 - lambda_) * other_data[-2]
 
+        # === 新增：始终输出 Timestamp（仅用于绘图、窗口筛选，不作为特征输入模型）===
+        # 即使 self.keys 不包含 Timestamp，也把原始 window 的 Timestamp 序列/最后一个值传出去
+        if 'Timestamp' in window:
+            # 输出整个窗口的 Timestamp 序列（evaluation.py 需要用于画图）
+            output['Timestamp_seq'] = torch.tensor(window['Timestamp'].tolist())        # 全序列
+            output['Timestamp'] = torch.tensor(window['Timestamp'].tolist())[-1]       # 最后一个（兼容旧代码）
+        elif 'Timestamp_orig' in window:
+            # 兼容旧代码里可能有的 Timestamp_orig
+            output['Timestamp_seq'] = torch.tensor(window['Timestamp_orig'].tolist())
+            output['Timestamp'] = torch.tensor(window['Timestamp_orig'].tolist())[-1]
+        else:
+            # 极端情况防报错
+            output['Timestamp'] = torch.tensor(0.0)
+            output['Timestamp_seq'] = torch.tensor([0.0])
+
         return output
 
     def set_initial_seed(self, seed):
