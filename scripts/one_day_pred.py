@@ -177,7 +177,8 @@ if __name__ == "__main__":
     
     
     features = {}
-    key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
+    # key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
+    key_list = ['Open', 'High', 'Low', 'Close']
     if use_volume:
         key_list.append('Volume')
     key_list += config.get('additional_features', [])  # 新增：包含 additional_features，如 ['marketCap']
