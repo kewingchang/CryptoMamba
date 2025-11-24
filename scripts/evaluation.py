@@ -195,7 +195,7 @@ if __name__ == "__main__":
 
     # [新增] 提取特征名称和跳过列表
     feature_names = [k for k in test_transform.keys if k != 'Timestamp_orig']
-    skip_revin_list = config.get('skip_RevIN', [])
+    skip_revin_list = config.get('skip_revin', [])
 
     # model, normalize = load_model(config, args.ckpt_path)
     # [修改] 调用 load_model 时传入参数

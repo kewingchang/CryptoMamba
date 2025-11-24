@@ -159,7 +159,7 @@ if __name__ == "__main__":
 
     # [新增] 提取特征名称 (排除 Timestamp_orig，因为它不进入 features Tensor)
     feature_names = [k for k in train_transform.keys if k != 'Timestamp_orig']
-    skip_revin_list = config.get('skip_RevIN', []) # 从 yaml 读取
+    skip_revin_list = config.get('skip_revin', []) # 从 yaml 读取
 
     # 修改：传入 args.max_epochs
     # model, normalize = load_model(config, args.logger_type, args.max_epochs)
