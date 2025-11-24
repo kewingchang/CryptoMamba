@@ -110,7 +110,9 @@ def save_all_hparams(log_dir, args):
         yaml.dump(save_dict, f)
 
 
-def load_model(config, logger_type, max_epochs):  # 修改：添加 max_epochs 参数
+def load_model(config, logger_type, max_epochs, feature_names=None, skip_revin=None):
+    # 修改：添加 max_epochs 参数
+    # [修改] load_model 增加 feature_names 和 skip_revin 参数
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
@@ -124,6 +126,12 @@ def load_model(config, logger_type, max_epochs):  # 修改：添加 max_epochs �
 
     model_config.get('params')['logger_type'] = logger_type
     model_config.get('params')['max_epochs'] = max_epochs  # 新增：将 max_epochs 添加到 params
+
+    # [新增] 将特征名称和跳过列表注入到模型参数中
+    if feature_names is not None:
+        model_config.get('params')['feature_names'] = feature_names
+    if skip_revin is not None:
+        model_config.get('params')['skip_revin'] = skip_revin
 
     model = io_tools.instantiate_from_config(model_config)
     model.cuda()
@@ -149,7 +157,14 @@ if __name__ == "__main__":
     val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
     test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
 
-    model, normalize = load_model(config, args.logger_type, args.max_epochs)  # 修改：传入 args.max_epochs
+    # [新增] 提取特征名称 (排除 Timestamp_orig，因为它不进入 features Tensor)
+    feature_names = [k for k in train_transform.keys if k != 'Timestamp_orig']
+    skip_revin_list = config.get('skip_RevIN', []) # 从 yaml 读取
+
+    # 修改：传入 args.max_epochs
+    # model, normalize = load_model(config, args.logger_type, args.max_epochs)
+    # [修改] 传入 feature_names 和 skip_revin_list
+    model, normalize = load_model(config, args.logger_type, args.max_epochs, feature_names, skip_revin_list)
 
     tmp = vars(args)
     tmp.update(config)

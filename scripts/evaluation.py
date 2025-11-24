@@ -121,12 +121,17 @@ def init_dirs(args, name):
     plot_path = f'{path}/pred.jpg'
     return txt_file, plot_path
 
-def load_model(config, ckpt_path):
+def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     normalize = model_config.get('normalize', False)
+    # [新增] 将特征名称和跳过列表注入到模型参数中 (覆盖 yaml 中的默认配置)
+    if feature_names is not None:
+        model_config.get('params')['feature_names'] = feature_names
+    if skip_revin is not None:
+        model_config.get('params')['skip_revin'] = skip_revin
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
     model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
     model.cuda()
@@ -183,11 +188,19 @@ if __name__ == "__main__":
     use_volume = args.use_volume
     if not use_volume:
         use_volume = config.get('use_volume')
+
     train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
     val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
     test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
 
-    model, normalize = load_model(config, args.ckpt_path)
+    # [新增] 提取特征名称和跳过列表
+    feature_names = [k for k in test_transform.keys if k != 'Timestamp_orig']
+    skip_revin_list = config.get('skip_RevIN', [])
+
+    # model, normalize = load_model(config, args.ckpt_path)
+    # [修改] 调用 load_model 时传入参数
+    model, normalize = load_model(config, args.ckpt_path, feature_names, skip_revin_list)
+
     data_module = CMambaDataModule(data_config,
                                    train_transform=train_transform,
                                    val_transform=val_transform,
