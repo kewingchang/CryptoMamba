@@ -8,7 +8,8 @@ from argparse import ArgumentParser
 
 
 # train with some features
-def train_features(to_train_features, fixed_features_num):
+# 修改点：增加 skip_features 参数
+def train_features(to_train_features, fixed_features_num, skip_features):
     # 1. 删除目录: "data"中的一个以数字开头的子目录及该子目录中的所有文件
     data_dir = "data"
     if os.path.exists(data_dir):
@@ -30,6 +31,10 @@ def train_features(to_train_features, fixed_features_num):
 
     # 3. 将to_train_features赋值给additional_features并保存
     mode_1_data['additional_features'] = to_train_features
+    
+    # --- 修改需求 3: 将 y (skip_features) 赋值给 mode_1.yaml 中的 skip_revin ---
+    mode_1_data['skip_revin'] = skip_features
+    
     with open(mode_1_path, 'w') as f:
         yaml.dump(mode_1_data, f)
 
@@ -40,6 +45,10 @@ def train_features(to_train_features, fixed_features_num):
 
     # 5. 将to_train_features赋值给additional_features并保存
     cmamba_v_data['additional_features'] = to_train_features
+    
+    # --- 修改需求 4: 将 y (skip_features) 赋值给 cmamba_v.yaml 中的 skip_revin ---
+    cmamba_v_data['skip_revin'] = skip_features
+    
     with open(cmamba_v_path, 'w') as f:
         yaml.dump(cmamba_v_data, f)
 
@@ -82,6 +91,9 @@ if __name__ == "__main__":
     # 解析命令行参数
     parser = ArgumentParser(description="Feature Selection for ETH Dataset")
     parser.add_argument('--filename', type=str, required=True, help="Path to the CSV file, e.g., ETH_Dataset_daily.csv")
+    # --- 修改需求 1: 新增命令行参数 --skip ---
+    parser.add_argument('--skip', type=str, required=False, default=None, help="Path to the JSON file containing features to skip (optional)")
+    
     args = parser.parse_args()
 
     fixed_features = ['Open', 'High', 'Low', 'Close']
@@ -91,11 +103,28 @@ if __name__ == "__main__":
     print("Loading data from:", args.filename)    
     # json配置文件和csv数据文件:train3f.json, step1-org.csv
     json_name = args.filename
-    # 读取json文件
+    
+    # 读取主json文件
     with open(json_name, 'r') as f:
-        data = json.load(f)
-    # for 每一行 in json
-    for combo in data:
-        print(f"...Start process: {combo}")
-        # 2.7 调用train_features()
-        train_features(combo, num_fixed_features)
+        data = json.load(f) # 这是一个列表的列表，对应 combo
+
+    # --- 修改需求 2: 读取 --skip 文件并准备数据 ---
+    skip_data = []
+    if args.skip:
+        print("Loading skip features from:", args.skip)
+        with open(args.skip, 'r') as f:
+            skip_data = json.load(f) # 对应 y
+            
+        # 简单检查长度是否一致，防止IndexError
+        if len(skip_data) != len(data):
+            print(f"Warning: Length of skip data ({len(skip_data)}) does not match length of feature data ({len(data)}).")
+    else:
+        # 如果 --skip 为空，则 y 为空 list，构造一个与 data 长度相同的由空列表组成的列表
+        skip_data = [[] for _ in range(len(data))]
+
+    # 同步循环
+    # zip(data, skip_data) 会把两个列表对应位置的元素打包在一起
+    for i, (combo, y) in enumerate(zip(data, skip_data)):
+        print(f"...Start process index {i}: {combo}, skip: {y}")
+        # 2.7 调用train_features()，传入 combo 和 y
+        train_features(combo, num_fixed_features, y)
