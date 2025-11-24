@@ -396,6 +396,8 @@ class CMamba(nn.Module):
         use_checkpoint=False,
         cls=False,
         revin=False,
+        feature_names: list[str] = None, # [新增]
+        skip_revin: list[str] = None,    # [新增]
         **kwargs
     ):
         super().__init__()
@@ -416,12 +418,75 @@ class CMamba(nn.Module):
         self.args = kwargs
         self.act = nn.ReLU
         self.cls = cls
-        self.revin = RevIN(self.num_features, affine=True, subtract_last=False) if revin else None
 
+        self.debug_log_count = 0
+
+        # self.revin = RevIN(self.num_features, affine=True, subtract_last=False) if revin else None
+
+        # === [核心修改开始] RevIN 部分逻辑重构 ===
+        self.revin_enabled = revin
+        self.revin = None
+        # [删除] 删掉下面这两行，防止 register_buffer 报错 "already exists"
+        # self.norm_indices = None
+        # self.skip_indices = None
+
+        if self.revin_enabled:
+            # 准备索引列表
+            norm_idx_list = []
+            skip_idx_list = []
+
+            # [逻辑修正] 只要提供了 feature_names，就按名称匹配逻辑走
+            # 即使 skip_revin 为空，也会正确地把所有特征放入 norm_idx_list
+            if feature_names is not None:
+                # 确保 skip_revin 是个集合，处理 None 或空列表的情况
+                skip_set = set(skip_revin) if skip_revin else set()
+                
+                for i, name in enumerate(feature_names):
+                    if name in skip_set:
+                        skip_idx_list.append(i)
+                    else:
+                        norm_idx_list.append(i)
+                
+                # [新增功能 1] 构造并打印名称列表
+                self.norm_feature_names = [feature_names[i] for i in norm_idx_list]
+                self.skip_feature_names = [feature_names[i] for i in skip_idx_list]
+
+            else:
+                # 兼容旧逻辑：如果没有 feature_names，默认全部归一化
+                norm_idx_list = list(range(num_features))
+                skip_idx_list = []
+                self.norm_feature_names = [f"feat_{i}" for i in norm_idx_list] # 伪名称
+                self.skip_feature_names = [] # [新增] 必须初始化这个变量，否则后面打印日志会报错
+
+            # 注册 Buffer (只需注册一次)
+            self.register_buffer('norm_indices', torch.tensor(norm_idx_list, dtype=torch.long))
+            self.register_buffer('skip_indices', torch.tensor(skip_idx_list, dtype=torch.long))
+            
+            revin_num_features = len(norm_idx_list)
+            print(f"RevIN Active: Normalizing {revin_num_features} features, Skipping {len(skip_idx_list)} features.")
+            
+            # [新增功能 1] 打印具体的特征列表
+            if self.norm_feature_names:
+                print(f"  >> Normalizing Features: {self.norm_feature_names}")
+            if self.skip_feature_names:
+                print(f"  >> Skipping Features:    {self.skip_feature_names}")
+            
+            # 初始化 RevIN，只针对需要归一化的特征数量
+            self.revin = RevIN(revin_num_features, affine=True, subtract_last=False)
+        # === [核心修改结束] ===
+
+        # self.post_process = nn.Sequential(
+        #     Permute(0, 2, 1),
+        #     nn.Linear(num_features, 1),
+        # ) if self.revin is None else None
         self.post_process = nn.Sequential(
             Permute(0, 2, 1),
             nn.Linear(num_features, 1),
-        ) if self.revin is None else None
+        ) if not self.revin_enabled else None # 注意：这里逻辑可能需要微调，原代码用 self.revin is None 判断
+        
+        # 修正：如果 skip_revin 存在，self.revin 也是存在的，所以原代码逻辑 self.revin is None 仍然有效
+        # 但要注意 denormalize 时可能只需要输出通道，通常 RevIN 实际上并不影响 backbone 最后的 Linear 维度
+
         self.tanh = nn.Tanh()
 
         d = len(hidden_dims)
@@ -476,21 +541,113 @@ class CMamba(nn.Module):
         return nn.Sequential(*modules)
 
     
+    # def forward(self, x):
+    #     # x = self.norm(x)
+    #     if self.revin is not None:
+    #         # print("Before RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 打印每个通道均值
+    #         x = x.transpose(1, 2)  # (B, window_size, num_features)
+    #         x = self.revin(x, 'norm')
+    #         # print("After RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 应接近0/
+    #         for layer in self.blocks:
+    #             x = layer(x)
+    #         x = x[:, -1, 0]  # (B,)
+    #     else:
+    #         for layer in self.blocks:
+    #             x = layer(x)
+    #         x = self.post_process(x)
+    #         x = x.reshape(-1)
+    #     if self.cls:
+    #         x = self.tanh(x)
+    #     return x
+
     def forward(self, x):
-        # x = self.norm(x)
-        if self.revin is not None:
-            # print("Before RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 打印每个通道均值
-            x = x.transpose(1, 2)  # (B, window_size, num_features)
-            x = self.revin(x, 'norm')
-            # print("After RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 应接近0/
-            for layer in self.blocks:
-                x = layer(x)
-            x = x[:, -1, 0]  # (B,)
-        else:
-            for layer in self.blocks:
-                x = layer(x)
-            x = self.post_process(x)
-            x = x.reshape(-1)
-        if self.cls:
-            x = self.tanh(x)
-        return x
+            # x input shape: (B, C, L) -> (Batch, Features, Window)
+            
+            if self.revin_enabled and self.revin is not None:
+                # 1. 转置为 (B, L, C) 以适配 RevIN 和 Mamba
+                x = x.transpose(1, 2)  # Now: (B, L, C)
+
+                # === [修正] 分离、归一化、重组 ===
+                
+                # 2. 提取特征 (注意：在最后一维 C 上进行索引)
+                # x shape is (Batch, Length, Features)
+                x_to_norm = x[..., self.norm_indices]  # (B, L, C_norm)
+                x_to_skip = x[..., self.skip_indices]  # (B, L, C_skip)
+
+
+                # [新增功能 2] 打印归一化前的统计信息 (仅前 3 个 Batch)
+                if self.debug_log_count < 3 and self.norm_feature_names:
+                    print(f"\n[RevIN Debug - Batch {self.debug_log_count}] Before Normalization:")
+                    # 计算均值和标准差 (跨 Batch 和 Length 维度)
+                    # x_to_norm shape: (B, L, C_norm) -> mean(dim=(0,1)) -> (C_norm,)
+                    means = x_to_norm.mean(dim=(0, 1))
+                    stds = x_to_norm.std(dim=(0, 1))
+                    for i, name in enumerate(self.norm_feature_names):
+                        print(f"  Feature: {name:<20} | Mean: {means[i]:.4f} | Std: {stds[i]:.4f}")
+
+                # 3. 进行 RevIN (RevIN 期望 B, L, C)
+                x_normed = self.revin(x_to_norm, 'norm')
+
+                # [新增功能 2] 打印归一化后的统计信息
+                if self.debug_log_count < 3 and self.norm_feature_names:
+                    print(f"[RevIN Debug - Batch {self.debug_log_count}] After Normalization (Target: Mean~0, Std~1):")
+                    means = x_normed.mean(dim=(0, 1))
+                    stds = x_normed.std(dim=(0, 1))
+                    for i, name in enumerate(self.norm_feature_names):
+                        print(f"  Feature: {name:<20} | Mean: {means[i]:.4f} | Std: {stds[i]:.4f}")
+                    print("-" * 60)
+                    self.debug_log_count += 1
+
+                # 4. 按原始顺序拼回去
+                x_combined = torch.zeros_like(x)
+                
+                if len(self.norm_indices) > 0:
+                    x_combined[..., self.norm_indices] = x_normed
+                if len(self.skip_indices) > 0:
+                    x_combined[..., self.skip_indices] = x_to_skip
+                
+                x = x_combined
+                
+                # [修正] 不要转回去！Mamba Block 需要 (B, L, C)
+                # x = x.transpose(1, 2)  <-- 这一行是导致之前报错的原因
+                # =======================================
+
+                for layer in self.blocks:
+                    x = layer(x)
+                
+                # 输出处理：取最后一个时间步的第0个特征（通常是 Close）
+                # x shape: (B, L, C)
+                x = x[:, -1, 0]  # (B,)
+                
+            else:
+                # 无 RevIN 逻辑
+                # 这里也需要转置，因为 Dataset 给出的是 (B, C, L)
+                x = x.transpose(1, 2) # Ensure (B, L, C) for blocks
+
+                for layer in self.blocks:
+                    x = layer(x)
+                x = self.post_process(x)
+                x = x.reshape(-1)
+                
+            if self.cls:
+                x = self.tanh(x)
+            return x
+
+    def get_revin_target_idx(self, original_target_idx):
+        if not self.revin_enabled or self.norm_indices is None:
+            return original_target_idx
+        
+        # 查找原始 target_idx 在 norm_indices 中的位置
+        # (original_target_idx == self.norm_indices).nonzero()
+        try:
+            # 找到 original_target_idx 在 norm_indices 列表中的下标
+            # 比如 norm_indices = [0, 1, 3], target=3 -> 返回 2
+            idx = (self.norm_indices == original_target_idx).nonzero(as_tuple=True)[0]
+            if len(idx) > 0:
+                return idx.item()
+            else:
+                # Target 被跳过归一化了？那就不需要反归一化了（或者 revin 也没记录它的 stats）
+                return None 
+        except Exception:
+            return original_target_idx
+    
