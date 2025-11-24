@@ -81,7 +81,7 @@ class BaseModule(pl.LightningModule):
 
         self.smooth_l1 = SmoothL1Loss(beta=0.5)  # 新增
 
-        # self.target_channel = 4  # Index for 'Close' in keys
+        # Index for 'Close' in keys
         self.target_channel = 3
 
         self.mse = nn.MSELoss()
@@ -114,17 +114,38 @@ class BaseModule(pl.LightningModule):
             y_hat = y_hat * scale + shift
         elif hasattr(self.model, 'revin') and self.model.revin is not None:
             re = self.model.revin
-            # print("Before denorm: y_hat=", y_hat.mean(), "stdev=", re.stdev.mean())  # 检查stats是否从norm继承
-            target_idx = self.target_channel
-            if re.affine:
-                y_hat = y_hat - re.affine_bias[target_idx]
-                y_hat = y_hat / (re.affine_weight[target_idx] + re.eps)
-            y_hat = y_hat * re.stdev[:, 0, target_idx]
-            if re.subtract_last:
-                y_hat = y_hat + re.last[:, 0, target_idx]
+            # [修改] 获取正确的索引
+            if hasattr(self.model, 'get_revin_target_idx'):
+                revin_idx = self.model.get_revin_target_idx(self.target_channel)
+                if revin_idx is None:
+                    # Target 在 skip 列表中，不需要反归一化 (理论上 y_hat 已经是原始尺度)
+                    return y, y_hat 
             else:
-                y_hat = y_hat + re.mean[:, 0, target_idx]
+                revin_idx = self.target_channel
+
+            # 使用revin_idx修改
+            if re.affine:
+                y_hat = y_hat - re.affine_bias[revin_idx]
+                y_hat = y_hat / (re.affine_weight[revin_idx] + re.eps)
+            
+            y_hat = y_hat * re.stdev[:, 0, revin_idx]
+            if re.subtract_last:
+                y_hat = y_hat + re.last[:, 0, revin_idx]
+            else:
+                y_hat = y_hat + re.mean[:, 0, revin_idx]
+
+            # print("Before denorm: y_hat=", y_hat.mean(), "stdev=", re.stdev.mean())  # 检查stats是否从norm继承
+            # target_idx = self.target_channel
+            # if re.affine:
+            #     y_hat = y_hat - re.affine_bias[target_idx]
+            #     y_hat = y_hat / (re.affine_weight[target_idx] + re.eps)
+            # y_hat = y_hat * re.stdev[:, 0, target_idx]
+            # if re.subtract_last:
+            #     y_hat = y_hat + re.last[:, 0, target_idx]
+            # else:
+            #     y_hat = y_hat + re.mean[:, 0, target_idx]
             # print("After denorm: y_hat=", y_hat.mean())  # 应恢复原始尺度
+
         return y, y_hat
 
     def training_step(self, batch, batch_idx):

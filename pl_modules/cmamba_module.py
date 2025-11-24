@@ -32,6 +32,8 @@ class CryptoMambaModule(BaseModule):
         revin=False,
         max_epochs=1000,  # 新增 max_epochs 参数
         alpha=0.7,  # 新增 alpha
+        feature_names=None,  # [新增]
+        skip_revin=None,     # [新增]
         **kwargs
     ): 
         super().__init__(lr=lr,
@@ -60,5 +62,7 @@ class CryptoMambaModule(BaseModule):
             d_states=d_states,
             use_checkpoint=use_checkpoint,
             revin=revin,
+            feature_names=feature_names, # [新增] 传递给 CMamba
+            skip_revin=skip_revin,       # [新增] 传递给 CMamba
             **kwargs
         )
