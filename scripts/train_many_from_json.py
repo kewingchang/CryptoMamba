@@ -91,8 +91,8 @@ if __name__ == "__main__":
     # 解析命令行参数
     parser = ArgumentParser(description="Feature Selection for ETH Dataset")
     parser.add_argument('--filename', type=str, required=True, help="Path to the CSV file, e.g., ETH_Dataset_daily.csv")
-    # --- 修改需求 1: 新增命令行参数 --skip ---
-    parser.add_argument('--skip', type=str, required=False, default=None, help="Path to the JSON file containing features to skip (optional)")
+    # --- 修改需求 1: 新增命令行参数 --skip_revin ---
+    parser.add_argument('--skip_revin', type=str, required=False, default=None, help="Path to the JSON file containing features to skip revin (optional)")
     
     args = parser.parse_args()
 
@@ -108,23 +108,23 @@ if __name__ == "__main__":
     with open(json_name, 'r') as f:
         data = json.load(f) # 这是一个列表的列表，对应 combo
 
-    # --- 修改需求 2: 读取 --skip 文件并准备数据 ---
+    # --- 修改需求 2: 读取 --skip_revin 文件并准备数据 ---
     skip_data = []
-    if args.skip:
-        print("Loading skip features from:", args.skip)
-        with open(args.skip, 'r') as f:
+    if args.skip_revin:
+        print("Loading skip_revin features from:", args.skip_revin)
+        with open(args.skip_revin, 'r') as f:
             skip_data = json.load(f) # 对应 y
             
         # 简单检查长度是否一致，防止IndexError
         if len(skip_data) != len(data):
-            print(f"Warning: Length of skip data ({len(skip_data)}) does not match length of feature data ({len(data)}).")
+            print(f"Warning: Length of skip_revin data ({len(skip_data)}) does not match length of feature data ({len(data)}).")
     else:
-        # 如果 --skip 为空，则 y 为空 list，构造一个与 data 长度相同的由空列表组成的列表
+        # 如果 --skip_revin 为空，则 y 为空 list，构造一个与 data 长度相同的由空列表组成的列表
         skip_data = [[] for _ in range(len(data))]
 
     # 同步循环
     # zip(data, skip_data) 会把两个列表对应位置的元素打包在一起
     for i, (combo, y) in enumerate(zip(data, skip_data)):
-        print(f"...Start process index {i}: {combo}, skip: {y}")
+        print(f"...Start process index {i}: {combo}, skip_revin: {y}")
         # 2.7 调用train_features()，传入 combo 和 y
         train_features(combo, num_fixed_features, y)
