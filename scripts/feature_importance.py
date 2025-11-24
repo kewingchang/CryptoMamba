@@ -51,7 +51,7 @@ def get_feature_names(config):
 def calculate_rmse(y_true, y_pred):
     return torch.sqrt(torch.mean((y_true - y_pred) ** 2)).item()
 
-def load_model_with_config(checkpoint_path, train_config):
+def load_model_with_config(checkpoint_path, train_config, feature_names):
     """
     加载模型结构配置，并结合 checkpoint 加载权重
     """
@@ -78,12 +78,11 @@ def load_model_with_config(checkpoint_path, train_config):
             if key in model_params:
                 model_params[key] = train_hyperparams.get(key)
 
-    # 5. 确保 hidden_dims 维数与特征数匹配 (重要修复)
-    # v2.yaml 中 hidden_dims[0] 必须等于输入特征数。
-    # DataTransform 产生的特征数 = Timestamp(1) + OHLC(4) + Volume(0/1) + Additional(N)
-    # 你的报错显示输入维度是 7，这与 v2.yaml 中的 num_features: 7 一致。
-    # 我们这里不做硬性修改，直接信任 v2.yaml 和 checkpoint 的一致性。
-    
+    # 5. [关键修复] 注入 feature_names 和 skip_revin
+    # 这确保模型初始化时知道哪些特征需要跳过归一化，从而正确构建 RevIN 层
+    model_params['feature_names'] = feature_names
+    model_params['skip_revin'] = train_config.get('skip_RevIN', [])
+
     print(f"Initializing model with params: {model_params}")
     
     # 6. 加载 Checkpoint，传入 strict=False 以防部分非权重参数不匹配，但传入 **model_params 以构建正确结构
@@ -102,7 +101,11 @@ def main():
     use_volume = config.get('use_volume', False)
     print(f"Loaded training config '{args.config}'. Additional features count: {len(config.get('additional_features', []))}")
 
-    # 2. 准备数据
+    # 2. 准备特征名称列表 (必须在加载模型前完成)
+    feature_names = get_feature_names(config)
+    print(f"Target Feature List ({len(feature_names)}): {feature_names}")
+
+    # 3. 准备数据
     val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
     
     data_module = CMambaDataModule(
@@ -140,7 +143,7 @@ def main():
 
     # 3. 加载模型 (使用修复后的函数)
     print(f"Loading model structure and weights from {args.checkpoint_path}...")
-    model = load_model_with_config(args.checkpoint_path, config)
+    model = load_model_with_config(args.checkpoint_path, config, feature_names)
     
     model.to(device)
     model.eval()
@@ -158,14 +161,11 @@ def main():
     
     print(f"Baseline Validation RMSE: {baseline_rmse:.6f}")
 
-    # 5. PFI 分析
-    feature_names = get_feature_names(config)
-    print("len(feature_names):", len(feature_names))
+    # 6. PFI 分析
     print("X_val.shape[1]: ", X_val.shape[1])
 
     if len(feature_names) != X_val.shape[1]:
         print(f"WARNING: Feature names count ({len(feature_names)}) != Tensor channels ({X_val.shape[1]}).")
-        print(f"Detected Features: {feature_names}")
         feature_names = [f"Feat_{i}" for i in range(X_val.shape[1])]
     else:
         print("Feature names aligned successfully.")
