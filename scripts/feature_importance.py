@@ -81,7 +81,7 @@ def load_model_with_config(checkpoint_path, train_config, feature_names):
     # 5. [关键修复] 注入 feature_names 和 skip_revin
     # 这确保模型初始化时知道哪些特征需要跳过归一化，从而正确构建 RevIN 层
     model_params['feature_names'] = feature_names
-    model_params['skip_revin'] = train_config.get('skip_RevIN', [])
+    model_params['skip_revin'] = train_config.get('skip_revin', [])
 
     print(f"Initializing model with params: {model_params}")
     
