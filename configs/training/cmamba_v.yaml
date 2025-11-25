@@ -4,7 +4,7 @@ model: 'CMamba_v2'
 name: 'CMamba'
 max_epochs: 1000
 use_volume: False
-additional_features: ["vol_current","bitbo_sharpe_ratio","day_of_year","is_weekend"]
+additional_features: ["vol_current","bitbo_sharpe_ratio","trend_sma_slow","is_weekend"]
 
 skip_revin: []
 
