@@ -170,7 +170,8 @@ class BaseModule(pl.LightningModule):
         # 混合损失：根据 loss_type
         if self.loss_type == 'hybrid':
             # 加权和（用 rmse 以匹配原损失）
-            loss = self.alpha * smooth_l1_loss + (1 - self.alpha) * focal_loss
+            loss = smooth_l1_loss
+            # loss = self.alpha * smooth_l1_loss + (1 - self.alpha) * focal_loss
         elif self.loss_type == 'rmse':
             loss = rmse  # 原损失
         # ... 其他 elif 如 'mse' 等保持不变
