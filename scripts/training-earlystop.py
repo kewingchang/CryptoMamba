@@ -228,10 +228,10 @@ if __name__ == "__main__":
     trainer.fit(model, datamodule=data_module)
     if args.save_checkpoints:
         print("\n>>>>>>>>>>> Test Set Validate <<<<<<<<<<<<<<")
-        trainer.test(model, datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path)
+        trainer.test(model, datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path, weights_only=False)
         # Validate on Val set
         print("\n>>>>>>>>>>> Val Set Validate <<<<<<<<<<<<<<")
-        trainer.validate(model, dataloaders=data_module.val_dataloader(), ckpt_path=checkpoint_callback.best_model_path)
+        trainer.validate(model, dataloaders=data_module.val_dataloader(), ckpt_path=checkpoint_callback.best_model_path, weights_only=False)
         # "Validate" on Train set (模拟 Train 评测)
         print("\n>>>>>>>>>>> Train Set Validate <<<<<<<<<<<<<<")
-        trainer.validate(model, dataloaders=data_module.train_dataloader(), ckpt_path=checkpoint_callback.best_model_path)
+        trainer.validate(model, dataloaders=data_module.train_dataloader(), ckpt_path=checkpoint_callback.best_model_path, weights_only=False)
