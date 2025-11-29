@@ -82,7 +82,7 @@ def train_features(to_train_features, fixed_features_num, skip_features):
     # 10. 运行命令
     subprocess.run("python scripts/training-earlystop.py --config cmamba_v --save_checkpoints >> ./log.txt 2>&1", shell=True, check=True)
     # 11. 运行命令
-    subprocess.run("python scripts/evaluation.py --config cmamba_v --ckpt_path ./logs/CMamba/version_0/checkpoints/epoch*.ckpt >> ./log.txt 2>&1", shell=True, check=True)
+    # subprocess.run("python scripts/evaluation.py --config cmamba_v --ckpt_path ./logs/CMamba/version_0/checkpoints/epoch*.ckpt >> ./log.txt 2>&1", shell=True, check=True)
     # 12. 运行命令
     subprocess.run("python utils/save_to_drive.py", shell=True, check=True)
 
