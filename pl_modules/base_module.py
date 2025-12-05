@@ -226,7 +226,41 @@ class BaseModule(pl.LightningModule):
         }
     
     def configure_optimizers(self):
-        if self.optimizer == 'adam':
+        # 1. 准备参数分组：分离出不需要 Weight Decay 的参数
+        # Mamba/Transformer 的最佳实践：Bias, LayerNorm, 以及特定的 SSM 参数不应衰减
+        decay_params = []
+        no_decay_params = []
+        
+        # 遍历模型所有参数
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+                
+            # 检查 cmamba.py 中定义的特殊属性 _no_weight_decay
+            if hasattr(param, "_no_weight_decay") and param._no_weight_decay:
+                no_decay_params.append(param)
+            # 常见的不衰减类型：bias (偏置) 和 norm (归一化层权重)
+            elif "bias" in name or "norm" in name:
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+
+        # 构建参数组
+        optim_groups = [
+            {"params": decay_params, "weight_decay": self.weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0},
+        ]
+
+        # 2. 初始化优化器
+        if self.optimizer == 'adamw':
+            # AdamW 使用我们构建的分组
+            optim = torch.optim.AdamW(
+                optim_groups, 
+                lr=self.lr, 
+                betas=(0.9, 0.95) # Mamba 论文常用的 beta2 通常较低，也可以保持默认 (0.9, 0.999)
+            )
+        elif self.optimizer == 'adam':
+            # 旧的 Adam 逻辑 (也可以用分组，但 Adam 的 WD 实现本身就有问题，这里保持原样)
             optim = torch.optim.Adam(
                 self.parameters(), lr=self.lr, weight_decay=self.weight_decay
             )
@@ -236,9 +270,8 @@ class BaseModule(pl.LightningModule):
             )
         else:
             raise ValueError(f'Unimplemented optimizer {self.optimizer}')
-        # 新增 CosineAnnealingLR
-        # scheduler = CosineAnnealingLR(optim, T_max=self.max_epochs, eta_min=1e-6)
-        # 新增 CosineAnnealingLR with warmup
+
+        # 3. Scheduler (保持你原有的逻辑不变)
         scheduler = WarmupCosineScheduler(optim, warmup_epochs=10, max_epochs=self.max_epochs)
         return [optim], [scheduler]
 
