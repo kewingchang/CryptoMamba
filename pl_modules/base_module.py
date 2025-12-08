@@ -142,7 +142,9 @@ class BaseModule(pl.LightningModule):
             # loss = smooth_l1_loss + 0.3 * direction_loss 
             loss = smooth_l1_loss
         elif self.loss_type == 'rmse':
-            loss = rmse  # 原损失
+            loss = rmse
+        elif self.loss_type == 'mse':
+            loss = mse
         # ... 其他 elif 如 'mse' 等保持不变
 
         # 计算准确率acc (仅用于监控)
