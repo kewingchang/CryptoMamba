@@ -133,7 +133,7 @@ def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
     if skip_revin is not None:
         model_config.get('params')['skip_revin'] = skip_revin
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
-    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
+    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'), weights_only=False)
     model.cuda()
     model.eval()
     return model, normalize
