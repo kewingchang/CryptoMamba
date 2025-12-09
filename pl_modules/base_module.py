@@ -124,16 +124,7 @@ class BaseModule(pl.LightningModule):
         l1 = self.l1(y_hat, y)
 
         # SmoothL1
-        smooth_l1_loss = self.smooth_l1(y_hat, y)  # 新增smooth_l1_loss
-
-        # B. 方向损失 (替代原本的 BCE/Focal)
-        # 计算差分
-        diff_pred = y_hat - y_old
-        diff_true = y - y_old
-        # 核心逻辑：符号相反时惩罚。
-        # 如果 diff_pred * diff_true < 0 (异号)，则 -1 * product > 0，ReLU产生 Loss。
-        # 如果 diff_pred * diff_true > 0 (同号)，则 -1 * product < 0，ReLU为 0。
-        direction_loss = torch.mean(torch.relu(-1.0 * diff_pred * torch.sign(diff_true)))
+        smooth_l1_loss = self.smooth_l1(y_hat, y)
 
         # 混合损失：根据 loss_type
         if self.loss_type == 'hybrid':
@@ -147,6 +138,9 @@ class BaseModule(pl.LightningModule):
             loss = mse
         # ... 其他 elif 如 'mse' 等保持不变
 
+        # 计算差分
+        diff_pred = y_hat - y_old
+        diff_true = y - y_old
         # 计算准确率acc (仅用于监控)
         true_dir = (diff_true > 0).float()
         pred_dir = (diff_pred > 0).float()
