@@ -5,22 +5,18 @@ sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 import yaml
 from utils import io_tools
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint # 显式导入
+from pytorch_lightning.callbacks import EarlyStopping
 from argparse import ArgumentParser
 from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from pytorch_lightning.loggers import TensorBoardLogger
 import warnings
-import torch
-import glob
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 ROOT = io_tools.get_root(__file__, num_returns=2)
-
-# [移除] SnapshotCallback 类已不再需要
 
 def get_args():
     parser = ArgumentParser()
@@ -99,18 +95,10 @@ def get_args():
         default=200,
     )
 
-    # [新增] Ensemble 数量控制
-    parser.add_argument(
-        '--ensemble_k', 
-        type=int, 
-        default=5, 
-        help="Number of top checkpoints to keep for ensemble"
-    )
-
     args = parser.parse_args()
     return args
 
-# ... (save_all_hparams, load_model, calculate_all_metrics 函数保持不变) ...
+
 def save_all_hparams(log_dir, args):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -120,6 +108,7 @@ def save_all_hparams(log_dir, args):
         return
     with open(path, 'w') as f:
         yaml.dump(save_dict, f)
+
 
 def load_model(config, logger_type, max_epochs, feature_names=None, skip_revin=None):
     # 修改：添加 max_epochs 参数
@@ -149,46 +138,6 @@ def load_model(config, logger_type, max_epochs, feature_names=None, skip_revin=N
     model.train()
     return model, normalize
 
-# 辅助函数：手动计算指标
-def calculate_all_metrics(preds, targets, y_olds):
-    """
-    preds:   [N], 预测价格
-    targets: [N], 真实价格
-    y_olds:  [N], 昨日价格 (用于计算 Acc)
-    """
-    # 确保都在 CPU 上
-    preds = preds.cpu()
-    targets = targets.cpu()
-    y_olds = y_olds.cpu()
-
-    # 1. MSE / RMSE
-    mse = torch.mean((preds - targets) ** 2)
-    rmse = torch.sqrt(mse)
-
-    # 2. MAE (L1)
-    mae = torch.mean(torch.abs(preds - targets))
-
-    # 3. MAPE
-    # 注意处理分母为0的情况，虽然价格通常不为0
-    epsilon = 1e-8
-    mape = torch.mean(torch.abs((preds - targets) / (targets + epsilon)))
-
-    # 4. Accuracy (方向预测准确率)
-    diff_pred = preds - y_olds
-    diff_true = targets - y_olds
-    
-    # 这里的逻辑和 base_module 保持一致
-    true_dir = (diff_true > 0).float()
-    pred_dir = (diff_pred > 0).float()
-    acc = (true_dir == pred_dir).float().mean()
-
-    return {
-        "rmse": rmse.item(),
-        "mse": mse.item(),
-        "mae": mae.item(),
-        "mape": mape.item(),
-        "acc": acc.item()
-    }
 
 if __name__ == "__main__":
 
@@ -198,8 +147,10 @@ if __name__ == "__main__":
     logdir = args.logdir
 
     config = io_tools.load_config_from_yaml(f'{ROOT}/configs/training/{args.config}.yaml')
+
     data_config = io_tools.load_config_from_yaml(f"{ROOT}/configs/data_configs/{config.get('data_config')}.yaml")
     use_volume = args.use_volume
+
     if not use_volume:
         use_volume = config.get('use_volume')
     train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
@@ -239,21 +190,19 @@ if __name__ == "__main__":
                                    )
     
     callbacks = []
-    
-    # 1. [关键修改] ModelCheckpoint: 保存 Top K 个最好的模型
     if args.save_checkpoints:
-        checkpoint_callback = ModelCheckpoint(
-            save_top_k=args.ensemble_k,  # 使用参数控制，例如 5
+        checkpoint_callback = pl.callbacks.ModelCheckpoint(
+            save_top_k=1,
             verbose=True,
             monitor="val/rmse",
             mode="min",
             filename='epoch{epoch}-val-rmse{val/rmse:.4f}',
             auto_insert_metric_name=False,
-            save_last=True # 另外保留最后一个，防止TopK都没覆盖到最后
+            save_last=True
         )
         callbacks.append(checkpoint_callback)
     
-    # 2. EarlyStopping
+    # 添加早停
     early_stop_callback = EarlyStopping(
         monitor="val/rmse",
         min_delta=0.001,
@@ -262,8 +211,6 @@ if __name__ == "__main__":
         mode="min"
     )
     callbacks.append(early_stop_callback)
-
-    # [移除] SnapshotCallback
 
     max_epochs = config.get('max_epochs', args.max_epochs)
     model.set_normalization_coeffs(data_module.factors)
@@ -279,7 +226,7 @@ if __name__ == "__main__":
                          )
 
     trainer.fit(model, datamodule=data_module, weights_only=False)
-
+    
     if args.save_checkpoints:
         print("\n>>>>>>>>>>> Test Set Validate <<<<<<<<<<<<<<")
         trainer.test(model, datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path, weights_only=False)
@@ -289,99 +236,3 @@ if __name__ == "__main__":
         # "Validate" on Train set (模拟 Train 评测)
         print("\n>>>>>>>>>>> Train Set Validate <<<<<<<<<<<<<<")
         trainer.validate(model, dataloaders=data_module.train_dataloader(), ckpt_path=checkpoint_callback.best_model_path, weights_only=False)
-
-    # =========================================================
-    # Top-K Ensemble 评估部分
-    # =========================================================
-    
-    # 获取最好的 K 个模型路径
-    # checkpoint_callback.best_k_models 是一个字典 {path: score}
-    snapshot_paths = list(checkpoint_callback.best_k_models.keys())
-
-    # 1. 确定 Checkpoint 目录
-    ckpt_dir = checkpoint_callback.dirpath
-    if ckpt_dir is None and trainer.logger:
-        # 如果 callback 还没来得及设置 dirpath，尝试从 logger 推断
-        ckpt_dir = os.path.join(trainer.logger.log_dir, "checkpoints")
-    
-    snapshot_paths = []
-    if ckpt_dir and os.path.exists(ckpt_dir):
-        # 2. 扫描所有 .ckpt 文件
-        all_ckpts = glob.glob(os.path.join(ckpt_dir, "*.ckpt"))
-        # 3. 过滤掉 'last.ckpt' (它通常不是指标最好的，只是最新的)
-        snapshot_paths = [p for p in all_ckpts if "last.ckpt" not in os.path.basename(p)]        
-        # 4. (可选) 按文件名排序，方便观察
-        snapshot_paths.sort()
-
-    if len(snapshot_paths) == 0:
-        print("\n[Warning] No checkpoints found for ensemble.")
-    else:
-        print(f"\n>>>>>>>>>>> Starting Top-{len(snapshot_paths)} Ensemble Evaluation <<<<<<<<<<<<<<")
-        print(f"Models used: {snapshot_paths}")
-        
-        # 定义要评估的数据集
-        eval_stages = []
-        if args.save_checkpoints: 
-             eval_stages.append(("Validation Set", data_module.val_dataloader()))
-        eval_stages.append(("Test Set", data_module.test_dataloader()))
-
-        for stage_name, dataloader in eval_stages:
-            print(f"\n=== Evaluating on {stage_name} ===")
-            
-            # --- A. 收集 Ground Truth ---
-            all_targets = []
-            all_y_olds = []
-            
-            for batch in dataloader:
-                y = batch[model.y_key]           
-                y_old = batch[f'{model.y_key}_old'] 
-                all_targets.append(y.cpu())
-                all_y_olds.append(y_old.cpu())
-            
-            all_targets = torch.cat(all_targets, dim=0)
-            all_y_olds = torch.cat(all_y_olds, dim=0)
-
-            # --- B. 对每个 Top-K 模型进行预测 ---
-            ensemble_preds_denorm = [] 
-
-            for i, path in enumerate(snapshot_paths):
-                print(f"[{i+1}/{len(snapshot_paths)}] Predicting: {os.path.basename(path)}")
-                
-                checkpoint = torch.load(path, weights_only=False)
-                model.load_state_dict(checkpoint['state_dict'])
-                model.eval()
-                model.cuda()
-
-                cycle_preds = []
-                with torch.no_grad():
-                    for batch in dataloader:
-                        x = batch['features'].cuda()
-                        y_old_batch = batch[f'{model.y_key}_old'].cuda()
-                        
-                        y_hat_raw = model(x, y_old_batch).reshape(-1)
-                        _, y_hat_denorm = model.denormalize(None, y_hat_raw)
-                        cycle_preds.append(y_hat_denorm.cpu())
-
-                model_full_pred = torch.cat(cycle_preds, dim=0)
-                ensemble_preds_denorm.append(model_full_pred)
-                
-                # [可选] 打印单个模型的性能，方便排查谁是“烂苹果”
-                single_metrics = calculate_all_metrics(model_full_pred, all_targets, all_y_olds)
-                print(f"    -> RMSE: {single_metrics['rmse']:.4f}, -> MAE: {single_metrics['mae']:.4f}, -> MAPE: {single_metrics['mape']:.4f}, ACC: {single_metrics['acc']:.4f}")
-
-            # --- C. 计算平均 (Ensemble) ---
-            stacked_preds = torch.stack(ensemble_preds_denorm)
-            avg_preds = torch.mean(stacked_preds, dim=0)
-
-            # --- D. 计算 Ensemble 指标 ---
-            metrics = calculate_all_metrics(avg_preds, all_targets, all_y_olds)
-            
-            print(f"--- Top-{len(snapshot_paths)} Ensemble Results ({stage_name}) ---")
-            print(f"RMSE : {metrics['rmse']:.6f}")
-            print(f"MAE  : {metrics['mae']:.6f}")
-            print(f"MAPE  : {metrics['mape']:.6f}")
-            print(f"ACC  : {metrics['acc']:.6f}")
-            
-            # 与最好的单个模型对比（best_model_path 通常是 Top-1）
-            if checkpoint_callback.best_model_path:
-                print(f"Best Single Model path: {checkpoint_callback.best_model_path}")
