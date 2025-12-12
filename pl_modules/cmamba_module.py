@@ -1,3 +1,4 @@
+# cmamba_module.py
 import torch.nn as nn
 from models.cmamba import CMamba
 from .base_module import BaseModule
@@ -27,7 +28,12 @@ class CryptoMambaModule(BaseModule):
         y_key='Close',
         optimizer='adam',
         mode='default',
-        loss='rmse',
+        loss_type='rmse',
+        revin=False,
+        max_epochs=1000,  # 新增 max_epochs 参数
+        alpha=0.7,  # 新增 alpha
+        feature_names=None,  # [新增]
+        skip_revin=None,     # [新增]
         **kwargs
     ): 
         super().__init__(lr=lr,
@@ -39,10 +45,10 @@ class CryptoMambaModule(BaseModule):
                          optimizer=optimizer,
                          mode=mode,
                          window_size=window_size,
-                         loss=loss,
+                         loss_type=loss_type,
+                         alpha=alpha,  # 传给 super
+                         max_epochs=max_epochs,  # 传递到 super
                          )
-        assert window_size == hidden_dims[0]
-
         self.model = CMamba(
             num_features=num_features,
             hidden_dims=hidden_dims,
@@ -55,5 +61,8 @@ class CryptoMambaModule(BaseModule):
             num_classes=num_classes,
             d_states=d_states,
             use_checkpoint=use_checkpoint,
+            revin=revin,
+            feature_names=feature_names, # [新增] 传递给 CMamba
+            skip_revin=skip_revin,       # [新增] 传递给 CMamba
             **kwargs
         )
