@@ -1,3 +1,4 @@
+# one_day_pred.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
@@ -97,14 +98,19 @@ def save_all_hparams(log_dir, args):
     with open(log_dir + '/hparams.yaml', 'w') as f:
         yaml.dump(save_dict, f)
 
-def load_model(config, ckpt_path):
+def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     normalize = model_config.get('normalize', False)
+    # [新增] 注入参数
+    if feature_names is not None:
+        model_config.get('params')['feature_names'] = feature_names
+    if skip_revin is not None:
+        model_config.get('params')['skip_revin'] = skip_revin
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
-    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
+    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'),weights_only=False)
     model.cuda()
     return model, normalize
 
@@ -142,16 +148,29 @@ if __name__ == "__main__":
     data_config = io_tools.load_config_from_yaml(f"{ROOT}/configs/data_configs/{config.get('data_config')}.yaml")
 
     use_volume = config.get('use_volume', args.use_volume)
-    model, normalize = load_model(config, args.ckpt_path)
+
+    # [移位] 先创建 Transform 以获取 keys
+    train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+
+    # [新增] 获取 feature_names
+    feature_names = [k for k in test_transform.keys if k != 'Timestamp_orig']
+    skip_revin_list = config.get('skip_revin', [])
+
+    # [修改] 传递参数
+    model, normalize = load_model(config, args.ckpt_path, feature_names, skip_revin_list)
+    # model, normalize = load_model(config, args.ckpt_path)
 
     data = pd.read_csv(args.data_path)
     if 'Date' in data.keys():
         data['Timestamp'] = [float(time.mktime(datetime.strptime(x, "%Y-%m-%d").timetuple())) for x in data['Date']]
     data = data.sort_values(by='Timestamp').reset_index()
 
-    train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
-    val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
-    test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    # train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    # val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    # test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    
     data_module = CMambaDataModule(data_config,
                                    train_transform=train_transform,
                                    val_transform=val_transform,
@@ -176,10 +195,12 @@ if __name__ == "__main__":
     
     
     features = {}
-    key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
+    # key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
+    key_list = ['Open', 'High', 'Low', 'Close']
     if use_volume:
         key_list.append('Volume')
-
+    key_list += config.get('additional_features', [])  # 新增：包含 additional_features，如 ['marketCap']
+    
     for key in key_list:
         tmp = list(data.get(key))
         if normalize:
@@ -199,13 +220,24 @@ if __name__ == "__main__":
             scale_pred = scale
             shift_pred = shift
 
-    x = torch.cat([features.get(x) for x in features.keys()], dim=0)
+    x = torch.cat([features.get(x) for x in key_list], dim=0)  # 注意：这里使用 key_list，确保顺序与训练一致
 
-    close_idx = -2 if use_volume else -1
-    today = float(x[close_idx, -1])
+    # close_idx = -2 if use_volume else -1  # 如果添加了 marketCap，close_idx 需调整为 key_list.index('Close') - len(key_list)，但当前 -1 是 marketCap，-2 是 Close？不。
+    # 修正：close_idx 应基于 key_list 的位置；当前 key_list[-2] 是 Close（因为最后是 marketCap），所以 close_idx = -2 if not use_volume else 调整
+    # 但原代码 close_idx = -2 if use_volume else -1；由于 use_volume=False，且多了 marketCap，Close 是倒数第二，所以 close_idx = -2
+    close_idx = key_list.index('Close')  # 用 index 动态获取，避免硬编码
+    today = float(x[close_idx, -1]) * scale_pred + shift_pred
 
     with torch.no_grad():
-        pred = float(model(x[None, ...].cuda()).cpu()) * scale_pred + shift_pred
+        pred = model(x[None, ...].cuda()).cpu()
+        if normalize:
+            pred = float(pred) * scale_pred + shift_pred
+        elif hasattr(model.model, 'revin') and model.model.revin is not None:
+            pred_tensor = pred.reshape(-1).to(model.device)  # Add .to(model.device)
+            _, pred_tensor = model.denormalize(None, pred_tensor)
+            pred = float(pred_tensor.cpu()[0])  # Move back to CPU if needed
+        else:
+            pred = float(pred)
 
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')

@@ -1,3 +1,4 @@
+# evaluation.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
@@ -120,14 +121,19 @@ def init_dirs(args, name):
     plot_path = f'{path}/pred.jpg'
     return txt_file, plot_path
 
-def load_model(config, ckpt_path):
+def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
     arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
     model_arch = config.get('model')
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     normalize = model_config.get('normalize', False)
+    # [新增] 将特征名称和跳过列表注入到模型参数中 (覆盖 yaml 中的默认配置)
+    if feature_names is not None:
+        model_config.get('params')['feature_names'] = feature_names
+    if skip_revin is not None:
+        model_config.get('params')['skip_revin'] = skip_revin
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
-    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'))
+    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'), weights_only=False)
     model.cuda()
     model.eval()
     return model, normalize
@@ -143,18 +149,19 @@ def run_model(model, dataloader, factors=None):
             target = batch.get(model.y_key).numpy().reshape(-1)
             features = batch.get('features').to(model.device)
             preds = model(features).cpu().numpy().reshape(-1)
+            if factors is not None:
+                scale = factors.get(model.y_key).get('max') - factors.get(model.y_key).get('min')
+                shift = factors.get(model.y_key).get('min')
+                target = target * scale + shift
+                preds = preds * scale + shift
+            elif hasattr(model.model, 'revin') and model.model.revin is not None:
+                preds_tensor = torch.tensor(preds).to(model.device)
+                _, preds_tensor = model.denormalize(None, preds_tensor)
+                preds = preds_tensor.cpu().numpy()
             target_list += [float(x) for x in list(target)]
             preds_list += [float(x) for x in list(preds)]
             timetamps += [float(x) for x in list(ts)]
 
-    if factors is not None:
-        scale = factors.get(model.y_key).get('max') - factors.get(model.y_key).get('min')
-        shift = factors.get(model.y_key).get('min')
-        target_list = [x * scale + shift for x in target_list]
-        preds_list = [x * scale + shift for x in preds_list]
-        scale = factors.get('Timestamp').get('max') - factors.get('Timestamp').get('min')
-        shift = factors.get('Timestamp').get('min')
-        timetamps = [x * scale + shift for x in timetamps]
     targets = np.asarray(target_list)
     preds = np.asarray(preds_list)
     targets_tensor = torch.tensor(target_list)
@@ -181,11 +188,19 @@ if __name__ == "__main__":
     use_volume = args.use_volume
     if not use_volume:
         use_volume = config.get('use_volume')
+
     train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
     val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
     test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
 
-    model, normalize = load_model(config, args.ckpt_path)
+    # [新增] 提取特征名称和跳过列表
+    feature_names = [k for k in test_transform.keys if k != 'Timestamp_orig']
+    skip_revin_list = config.get('skip_revin', [])
+
+    # model, normalize = load_model(config, args.ckpt_path)
+    # [修改] 调用 load_model 时传入参数
+    model, normalize = load_model(config, args.ckpt_path, feature_names, skip_revin_list)
+
     data_module = CMambaDataModule(data_config,
                                    train_transform=train_transform,
                                    val_transform=val_transform,
@@ -203,9 +218,9 @@ if __name__ == "__main__":
     titles = ['Train', 'Val', 'Test']
     colors = ['red', 'green', 'magenta']
 
-    factors = None
-    if normalize:
-        factors = data_module.factors
+    factors = data_module.factors if normalize else None
+
+
     all_targets = []
     all_timestamps = []
 
