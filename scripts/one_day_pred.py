@@ -242,13 +242,24 @@ if __name__ == "__main__":
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')
 
+    # Smart trade
     b, s = buy_sell_smart(today, pred, 100, 100, risk=args.risk)
+    print(">>> Smart trade <<<")
+    print(f"> 1st order: {today}")
+    slp = today
     if b < 100:
         tmp = round((100 - b), 2)
         print_and_write(txt_file, f'Smart trade: {tmp}% buy')
+        print(f"> 2nd order: {today*0.99}")
+        slp = today * 0.98
     if s < 100:
         tmp = round((100 - s), 2)
         print_and_write(txt_file, f'Smart trade: {tmp}% sell')
+        print(f"> 2nd order: {today*1.01}")
+        slp = today * 1.02
+    print(f"> TP price: {pred}")
+    print(f"> SL price: {slp}")
+    print(">>>..............<<<")
 
     b, s = buy_sell_vanilla(today, pred, 100, 100)
     if b < 100:
