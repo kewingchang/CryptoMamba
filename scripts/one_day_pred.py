@@ -244,22 +244,24 @@ if __name__ == "__main__":
 
     # Smart trade
     b, s = buy_sell_smart(today, pred, 100, 100, risk=args.risk)
+    print("\n")
     print(">>> Smart trade <<<")
-    print(f"> 1st order: {today}")
+    print(f"> 1st order: {round(today, 2)}")
     slp = today
     if b < 100:
         tmp = round((100 - b), 2)
-        print_and_write(txt_file, f'Smart trade: {tmp}% buy')
-        print(f"> 2nd order: {today*0.99}")
+        print_and_write(txt_file, f'> Smart trade: {tmp}% buy')
+        print(f"> 2nd order: {round(today * 0.99, 2)}")
         slp = today * 0.98
     if s < 100:
         tmp = round((100 - s), 2)
-        print_and_write(txt_file, f'Smart trade: {tmp}% sell')
-        print(f"> 2nd order: {today*1.01}")
+        print_and_write(txt_file, f'> Smart trade: {tmp}% sell')
+        print(f"> 2nd order: {round(today * 1.01, 2)}")
         slp = today * 1.02
-    print(f"> TP price: {pred}")
-    print(f"> SL price: {slp}")
+    print(f"> TP price: {round(pred, 2)}")
+    print(f"> SL price: {round(slp, 2)}")
     print(">>>..............<<<")
+    print("\n")
 
     b, s = buy_sell_vanilla(today, pred, 100, 100)
     if b < 100:
