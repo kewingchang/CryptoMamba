@@ -1,3 +1,4 @@
+# cmamba.py
 import math
 from functools import partial
 from typing import Callable, Any
@@ -10,6 +11,7 @@ import torch.utils.checkpoint as checkpoint
 from causal_conv1d import causal_conv1d_fn, causal_conv1d_update
 from mamba_ssm.ops.triton.selective_state_update import selective_state_update
 from mamba_ssm.ops.selective_scan_interface import selective_scan_fn, mamba_inner_fn
+from pl_modules.revin import RevIN
 
 
 class Mamba(nn.Module):
@@ -134,7 +136,7 @@ class Mamba(nn.Module):
                 self.x_proj.weight,
                 self.dt_proj.weight,
                 self.out_proj.weight,
-                self.out_proj.bias,
+                self.out_proj.bias if self.out_proj.bias is not None else None,
                 A,
                 None,  # input-dependent B
                 None,  # input-dependent C
@@ -144,97 +146,110 @@ class Mamba(nn.Module):
             )
         else:
             x, z = xz.chunk(2, dim=1)
-            # Compute short convolution
+            # Compute short conv
             if conv_state is not None:
-                # If we just take x[:, :, -self.d_conv :], it will error if seqlen < self.d_conv
-                # Instead F.pad will pad with zeros if seqlen < self.d_conv, and truncate otherwise.
-                conv_state.copy_(F.pad(x, (self.d_conv - x.shape[-1], 0)))  # Update state (B D W)
+                conv_state.copy_(x[:, -self.d_conv :, :])  # Update state (B D W)
             if causal_conv1d_fn is None:
                 x = self.act(self.conv1d(x)[..., :seqlen])
             else:
-                assert self.activation in ["silu", "swish"]
                 x = causal_conv1d_fn(
-                    x=x,
-                    weight=rearrange(self.conv1d.weight, "d 1 w -> d w"),
-                    bias=self.conv1d.bias,
-                    activation=self.activation,
+                    x=x, weights=self.conv1d.weight, biases=self.conv1d.bias, activation=self.activation
                 )
 
-            # We're careful here about the layout, to avoid extra transposes.
-            # We want dt to have d as the slowest moving dimension
-            # and L as the fastest moving dimension, since those are what the ssm_scan kernel expects.
+            # We're careful with the layout: the weights are stored as (W, R, D_state, D_inner) but the C matrix is (B, D_state, L) and B (B, D_inner, L)
+            # the input x, z are (B, D_inner, L)
+            # the output y is (B, D_inner, L)
             x_dbl = self.x_proj(rearrange(x, "b d l -> (b l) d"))  # (bl d)
             dt, B, C = torch.split(x_dbl, [self.dt_rank, self.d_state, self.d_state], dim=-1)
             dt = self.dt_proj.weight @ dt.t()
             dt = rearrange(dt, "d (b l) -> b d l", l=seqlen)
-            B = rearrange(B, "(b l) dstate -> b dstate l", l=seqlen).contiguous()
-            C = rearrange(C, "(b l) dstate -> b dstate l", l=seqlen).contiguous()
-            assert self.activation in ["silu", "swish"]
-            y = selective_scan_fn(
-                x,
-                dt,
-                A,
-                B,
-                C,
-                self.D.float(),
-                z=z,
-                delta_bias=self.dt_proj.bias.float(),
-                delta_softplus=True,
-                return_last_state=ssm_state is not None,
-            )
+            B = rearrange(B, "(b l) n -> b n l", l=seqlen).contiguous()
+            C = rearrange(C, "(b l) n -> b n l", l=seqlen).contiguous()
             if ssm_state is not None:
-                y, last_state = y
-                ssm_state.copy_(last_state)
+                y, ssm_state = selective_scan_update_state(
+                    x,
+                    dt,
+                    A,
+                    B,
+                    C,
+                    self.D,
+                    z,
+                    dt_bias=self.dt_proj.bias,
+                    dt_softplus=True,
+                    state=ssm_state,
+                )
+            else:
+                y = selective_scan_fn(
+                    x,
+                    dt,
+                    A,
+                    B,
+                    C,
+                    self.D.float(),
+                    z=z,
+                    dt_bias=self.dt_proj.bias.float(),
+                    dt_softplus=True,
+                    return_last_state=ssm_state is not None,
+                )
+                if ssm_state is not None:
+                    y, last_state = y
+                    ssm_state.copy_(last_state)
             y = rearrange(y, "b d l -> b l d")
             out = self.out_proj(y)
         return out
 
     def step(self, hidden_states, conv_state, ssm_state):
         dtype = hidden_states.dtype
-        assert hidden_states.shape[1] == 1, "Only support decoding with 1 token at a time for now"
-        xz = self.in_proj(hidden_states.squeeze(1))  # (B 2D)
-        x, z = xz.chunk(2, dim=-1)  # (B D)
+        assert hidden_states.shape[1] == 1, "step only supports seqlen = 1"
 
-        # Conv step
+        # We do matmul and transpose BLH -> HBL at the same time
+        xz = rearrange(
+            self.in_proj.weight @ hidden_states.squeeze(1).unsqueeze(0).unsqueeze(-1),
+            "d (b l) -> b d l",
+            l=1,
+        )
+        if self.in_proj.bias is not None:
+            xz = xz + rearrange(self.in_proj.bias.to(dtype=xz.dtype), "d -> d 1")
+
+        A = -torch.exp(self.A_log.float())  # (d_inner, d_state)
+
+        # In the backward pass we write dx and dz next to each other to avoid torch.cat
         if causal_conv1d_update is None:
-            conv_state.copy_(torch.roll(conv_state, shifts=-1, dims=-1))  # Update state (B D W)
-            conv_state[:, :, -1] = x
-            x = torch.sum(conv_state * rearrange(self.conv1d.weight, "d 1 w -> d w"), dim=-1)  # (B D)
-            if self.conv1d.bias is not None:
-                x = x + self.conv1d.bias
-            x = self.act(x).to(dtype=dtype)
+            conv_state = torch.roll(conv_state, shifts=-1, dims=-1)
+            conv_state[:, :, -1] = xz[:, :, 0]
+            x = F.conv1d(
+                conv_state.unsqueeze(0), 
+                self.conv1d.weight, 
+                self.conv1d.bias, 
+                groups=conv_state.shape[0]
+            )[:, :, :, :1]  # (B, d_inner, 1)
+            x = x.squeeze(0).squeeze(-1)  # (B, d_inner)
+            x = self.act(x)
         else:
             x = causal_conv1d_update(
-                x,
+                xz.squeeze(-1),
                 conv_state,
-                rearrange(self.conv1d.weight, "d 1 w -> d w"),
+                self.conv1d.weight.squeeze(-1),
                 self.conv1d.bias,
                 self.activation,
             )
 
-        x_db = self.x_proj(x)  # (B dt_rank+2*d_state)
-        dt, B, C = torch.split(x_db, [self.dt_rank, self.d_state, self.d_state], dim=-1)
-        # Don't add dt_bias here
-        dt = F.linear(dt, self.dt_proj.weight)  # (B d_inner)
-        A = -torch.exp(self.A_log.float())  # (d_inner, d_state)
-
-        # SSM step
-        if selective_state_update is None:
-            # Discretize A and B
-            dt = F.softplus(dt + self.dt_proj.bias.to(dtype=dt.dtype))
-            dA = torch.exp(torch.einsum("bd,dn->bdn", dt, A))
-            dB = torch.einsum("bd,bn->bdn", dt, B)
-            ssm_state.copy_(ssm_state * dA + rearrange(x, "b d -> b d 1") * dB)
-            y = torch.einsum("bdn,bn->bd", ssm_state.to(dtype), C)
-            y = y + self.D.to(dtype) * x
-            y = y * self.act(z)  # (B D)
-        else:
-            y = selective_state_update(
-                ssm_state, x, dt, A, B, C, self.D, z=z, dt_bias=self.dt_proj.bias, dt_softplus=True
-            )
-
-        out = self.out_proj(y)
-        return out.unsqueeze(1), conv_state, ssm_state
+        x_dbl = self.x_proj(x)  # (bl d)
+        dt, B, C = torch.split(x_dbl, [self.dt_rank, self.d_state, self.d_state], dim=-1)
+        dt = self.dt_proj.weight @ dt.t()
+        dt = dt.squeeze(0)  # (d_inner)
+        dt = F.softplus(dt + self.dt_proj.bias.to(dtype=dt.dtype))
+        y = selective_state_update(
+            ssm_state,
+            x,
+            dt,
+            A,
+            B,
+            C,
+            self.D.float(),
+            dt_softplus=False,
+        )
+        return y.unsqueeze(1), conv_state, ssm_state
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
         device = self.out_proj.weight.device
@@ -250,50 +265,48 @@ class Mamba(nn.Module):
         return conv_state, ssm_state
 
     def _get_states_from_cache(self, inference_params, batch_size, initialize_states=False):
-        assert self.layer_idx is not None
-        if self.layer_idx not in inference_params.key_value_memory_dict:
-            batch_shape = (batch_size,)
-            conv_state = torch.zeros(
-                batch_size,
-                self.d_model * self.expand,
-                self.d_conv,
-                device=self.conv1d.weight.device,
-                dtype=self.conv1d.weight.dtype,
-            )
-            ssm_state = torch.zeros(
-                batch_size,
-                self.d_model * self.expand,
-                self.d_state,
-                device=self.dt_proj.weight.device,
-                dtype=self.dt_proj.weight.dtype,
-                # dtype=torch.float32,
-            )
-            inference_params.key_value_memory_dict[self.layer_idx] = (conv_state, ssm_state)
-        else:
-            conv_state, ssm_state = inference_params.key_value_memory_dict[self.layer_idx]
-            # TODO: What if batch size changes between generation, and we reuse the same states?
-            if initialize_states:
-                conv_state.zero_()
-                ssm_state.zero_()
+        if inference_params.key_value_memory_dict is None:
+            # TODO: Create it here if needed if needed
+            pass
+        conv_state = inference_params.key_value_memory_dict[self.layer_idx]["conv_state"]
+        ssm_state = inference_params.key_value_memory_dict[self.layer_idx]["ssm_state"]
+        # TODO: Initialize if needed
         return conv_state, ssm_state
 
 
-class Permute(nn.Module):
-    def __init__(self, *args):
+class RMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
-        self.args = args
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
 
-    def forward(self, x: torch.Tensor):
-        return x.permute(*self.args)
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        output = self._norm(x.float()).type_as(x)
+        return output * self.weight
+
+
+def exists(val):
+    return val is not None
+
+
+def dropout_seq(seq, dropout, training):
+    ones = seq.new_ones(1, seq.size(-2), seq.size(-1))
+    x = F.dropout2d(ones, dropout, training=training)
+    x = x * (1 - dropout)  # TODO: why its done this way?
+    seq = seq * x
+    return seq
 
 
 class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.,channels_first=False):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.0, channels_first=False):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
 
-        Linear = partial(nn.Conv2d, kernel_size=1, padding=0) if channels_first else nn.Linear
+        Linear = nn.Conv1d if channels_first else nn.Linear
         self.fc1 = Linear(in_features, hidden_features)
         self.act = act_layer()
         self.fc2 = Linear(hidden_features, out_features)
@@ -357,6 +370,15 @@ class CMBlock(nn.Module):
             return self._forward(x)
 
 
+class Permute(nn.Module):
+    def __init__(self, *dims):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x):
+        return x.permute(*self.dims)
+
+
 class CMamba(nn.Module):
 
     def __init__(
@@ -373,6 +395,9 @@ class CMamba(nn.Module):
         d_states=16,
         use_checkpoint=False,
         cls=False,
+        revin=False,
+        feature_names: list[str] = None, # [新增]
+        skip_revin: list[str] = None,    # [新增]
         **kwargs
     ):
         super().__init__()
@@ -394,10 +419,74 @@ class CMamba(nn.Module):
         self.act = nn.ReLU
         self.cls = cls
 
+        self.debug_log_count = 3 # disable debug
+
+        # self.revin = RevIN(self.num_features, affine=True, subtract_last=False) if revin else None
+
+        # === [核心修改开始] RevIN 部分逻辑重构 ===
+        self.revin_enabled = revin
+        self.revin = None
+        # [删除] 删掉下面这两行，防止 register_buffer 报错 "already exists"
+        # self.norm_indices = None
+        # self.skip_indices = None
+
+        if self.revin_enabled:
+            # 准备索引列表
+            norm_idx_list = []
+            skip_idx_list = []
+
+            # [逻辑修正] 只要提供了 feature_names，就按名称匹配逻辑走
+            # 即使 skip_revin 为空，也会正确地把所有特征放入 norm_idx_list
+            if feature_names is not None:
+                # 确保 skip_revin 是个集合，处理 None 或空列表的情况
+                skip_set = set(skip_revin) if skip_revin else set()
+                
+                for i, name in enumerate(feature_names):
+                    if name in skip_set:
+                        skip_idx_list.append(i)
+                    else:
+                        norm_idx_list.append(i)
+                
+                # [新增功能 1] 构造并打印名称列表
+                self.norm_feature_names = [feature_names[i] for i in norm_idx_list]
+                self.skip_feature_names = [feature_names[i] for i in skip_idx_list]
+
+            else:
+                # 兼容旧逻辑：如果没有 feature_names，默认全部归一化
+                norm_idx_list = list(range(num_features))
+                skip_idx_list = []
+                self.norm_feature_names = [f"feat_{i}" for i in norm_idx_list] # 伪名称
+                self.skip_feature_names = [] # [新增] 必须初始化这个变量，否则后面打印日志会报错
+
+            # 注册 Buffer (只需注册一次)
+            self.register_buffer('norm_indices', torch.tensor(norm_idx_list, dtype=torch.long))
+            self.register_buffer('skip_indices', torch.tensor(skip_idx_list, dtype=torch.long))
+            
+            revin_num_features = len(norm_idx_list)
+            print(f"RevIN Active: Normalizing {revin_num_features} features, Skipping {len(skip_idx_list)} features.")
+            
+            # [新增功能 1] 打印具体的特征列表
+            if self.norm_feature_names:
+                print(f"  >> Normalizing Features: {self.norm_feature_names}")
+            if self.skip_feature_names:
+                print(f"  >> Skipping Features:    {self.skip_feature_names}")
+            
+            # 初始化 RevIN，只针对需要归一化的特征数量
+            self.revin = RevIN(revin_num_features, affine=True, subtract_last=False)
+        # === [核心修改结束] ===
+
+        # self.post_process = nn.Sequential(
+        #     Permute(0, 2, 1),
+        #     nn.Linear(num_features, 1),
+        # ) if self.revin is None else None
         self.post_process = nn.Sequential(
             Permute(0, 2, 1),
             nn.Linear(num_features, 1),
-        )
+        ) if not self.revin_enabled else None # 注意：这里逻辑可能需要微调，原代码用 self.revin is None 判断
+        
+        # 修正：如果 skip_revin 存在，self.revin 也是存在的，所以原代码逻辑 self.revin is None 仍然有效
+        # 但要注意 denormalize 时可能只需要输出通道，通常 RevIN 实际上并不影响 backbone 最后的 Linear 维度
+
         self.tanh = nn.Tanh()
 
         d = len(hidden_dims)
@@ -452,12 +541,113 @@ class CMamba(nn.Module):
         return nn.Sequential(*modules)
 
     
-    def forward(self, x):
-        # x = self.norm(x)
-        for layer in self.blocks:
-            x = layer(x)
+    # def forward(self, x):
+    #     # x = self.norm(x)
+    #     if self.revin is not None:
+    #         # print("Before RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 打印每个通道均值
+    #         x = x.transpose(1, 2)  # (B, window_size, num_features)
+    #         x = self.revin(x, 'norm')
+    #         # print("After RevIN norm: mean=", x.mean(dim=[0,1]), "std=", x.std(dim=[0,1]))  # 应接近0/
+    #         for layer in self.blocks:
+    #             x = layer(x)
+    #         x = x[:, -1, 0]  # (B,)
+    #     else:
+    #         for layer in self.blocks:
+    #             x = layer(x)
+    #         x = self.post_process(x)
+    #         x = x.reshape(-1)
+    #     if self.cls:
+    #         x = self.tanh(x)
+    #     return x
 
-        x = self.post_process(x)
-        if self.cls:
-            x = self.tanh(x)
-        return x
+    def forward(self, x):
+            # x input shape: (B, C, L) -> (Batch, Features, Window)
+            
+            if self.revin_enabled and self.revin is not None:
+                # 1. 转置为 (B, L, C) 以适配 RevIN 和 Mamba
+                x = x.transpose(1, 2)  # Now: (B, L, C)
+
+                # === [修正] 分离、归一化、重组 ===
+                
+                # 2. 提取特征 (注意：在最后一维 C 上进行索引)
+                # x shape is (Batch, Length, Features)
+                x_to_norm = x[..., self.norm_indices]  # (B, L, C_norm)
+                x_to_skip = x[..., self.skip_indices]  # (B, L, C_skip)
+
+
+                # [新增功能 2] 打印归一化前的统计信息 (仅前 3 个 Batch)
+                if self.debug_log_count < 3 and self.norm_feature_names:
+                    print(f"\n[RevIN Debug - Batch {self.debug_log_count}] Before Normalization:")
+                    # 计算均值和标准差 (跨 Batch 和 Length 维度)
+                    # x_to_norm shape: (B, L, C_norm) -> mean(dim=(0,1)) -> (C_norm,)
+                    means = x_to_norm.mean(dim=(0, 1))
+                    stds = x_to_norm.std(dim=(0, 1))
+                    for i, name in enumerate(self.norm_feature_names):
+                        print(f"  Feature: {name:<20} | Mean: {means[i]:.4f} | Std: {stds[i]:.4f}")
+
+                # 3. 进行 RevIN (RevIN 期望 B, L, C)
+                x_normed = self.revin(x_to_norm, 'norm')
+
+                # [新增功能 2] 打印归一化后的统计信息
+                if self.debug_log_count < 3 and self.norm_feature_names:
+                    print(f"[RevIN Debug - Batch {self.debug_log_count}] After Normalization (Target: Mean~0, Std~1):")
+                    means = x_normed.mean(dim=(0, 1))
+                    stds = x_normed.std(dim=(0, 1))
+                    for i, name in enumerate(self.norm_feature_names):
+                        print(f"  Feature: {name:<20} | Mean: {means[i]:.4f} | Std: {stds[i]:.4f}")
+                    print("-" * 60)
+                    self.debug_log_count += 1
+
+                # 4. 按原始顺序拼回去
+                x_combined = torch.zeros_like(x)
+                
+                if len(self.norm_indices) > 0:
+                    x_combined[..., self.norm_indices] = x_normed
+                if len(self.skip_indices) > 0:
+                    x_combined[..., self.skip_indices] = x_to_skip
+                
+                x = x_combined
+                
+                # [修正] 不要转回去！Mamba Block 需要 (B, L, C)
+                # x = x.transpose(1, 2)  <-- 这一行是导致之前报错的原因
+                # =======================================
+
+                for layer in self.blocks:
+                    x = layer(x)
+                
+                # 输出处理：取最后一个时间步的第0个特征（通常是 Close）
+                # x shape: (B, L, C)
+                x = x[:, -1, 0]  # (B,)
+                
+            else:
+                # 无 RevIN 逻辑
+                # 这里也需要转置，因为 Dataset 给出的是 (B, C, L)
+                x = x.transpose(1, 2) # Ensure (B, L, C) for blocks
+
+                for layer in self.blocks:
+                    x = layer(x)
+                x = self.post_process(x)
+                x = x.reshape(-1)
+                
+            if self.cls:
+                x = self.tanh(x)
+            return x
+
+    def get_revin_target_idx(self, original_target_idx):
+        if not self.revin_enabled or self.norm_indices is None:
+            return original_target_idx
+        
+        # 查找原始 target_idx 在 norm_indices 中的位置
+        # (original_target_idx == self.norm_indices).nonzero()
+        try:
+            # 找到 original_target_idx 在 norm_indices 列表中的下标
+            # 比如 norm_indices = [0, 1, 3], target=3 -> 返回 2
+            idx = (self.norm_indices == original_target_idx).nonzero(as_tuple=True)[0]
+            if len(idx) > 0:
+                return idx.item()
+            else:
+                # Target 被跳过归一化了？那就不需要反归一化了（或者 revin 也没记录它的 stats）
+                return None 
+        except Exception:
+            return original_target_idx
+    
