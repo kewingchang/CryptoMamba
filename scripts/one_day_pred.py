@@ -258,6 +258,7 @@ if __name__ == "__main__":
         print_and_write(txt_file, f'> Smart trade: {tmp}% sell')
         print(f"> 2nd order: {round(today * 1.01, 2)}")
         slp = today * 1.02
+    print("\n")
     print(f"> TP price: {round(pred, 2)}")
     print(f"> SL price: {round(slp, 2)}")
     print(">>>..............<<<")
