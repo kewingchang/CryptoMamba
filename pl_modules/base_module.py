@@ -204,6 +204,7 @@ class BaseModule(pl.LightningModule):
         y, y_hat = self.denormalize(y, y_hat)
         mse = self.mse(y_hat, y)
         mse_ret = self.mse(y_hat, y)
+        rmse_monitor = torch.sqrt(mse)
         rmse = torch.sqrt(mse)
         mape = self.mape(y_hat, y)
         l1 = self.l1(y_hat, y)
@@ -244,6 +245,7 @@ class BaseModule(pl.LightningModule):
 
         self.log("val/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
         self.log("val/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+        self.log("val/rmse_monitor", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("val/acc", acc, batch_size=self.batch_size, prog_bar=True)
