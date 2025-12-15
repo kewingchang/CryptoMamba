@@ -245,7 +245,7 @@ class BaseModule(pl.LightningModule):
 
         self.log("val/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
         self.log("val/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("val/rmse_monitor", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+        self.log("val/rmse_monitor", rmse_monitor.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("val/acc", acc, batch_size=self.batch_size, prog_bar=True)
