@@ -107,7 +107,8 @@ def main():
         writer = csv.DictWriter(csvfile, fieldnames=columns)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            filtered_row = {key: row.get(key, '') for key in columns}
+            writer.writerow(filtered_row)
 
     print(f'CSV saved to {output_csv}')
 
