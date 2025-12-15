@@ -206,7 +206,7 @@ if __name__ == "__main__":
     early_stop_callback = EarlyStopping(
         monitor="val/rmse_monitor",
         min_delta=0.001,
-        patience=150,
+        patience=100,
         verbose=True,
         mode="min"
     )
