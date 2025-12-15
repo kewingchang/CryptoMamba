@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  # 修改：导
 class WarmupCosineScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, warmup_epochs, max_epochs, eta_min=1e-6, warmup_start_ratio=0.1):  # 新增 warmup_start_ratio，避免从 0 开始
         self.warmup_epochs = warmup_epochs
-        self.cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=eta_min)  # 修改：用 CosineAnnealingWarmRestarts 替换 CosineAnnealingLR
+        self.cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=1, eta_min=eta_min)  # 修改：用 CosineAnnealingWarmRestarts 替换 CosineAnnealingLR
         self.warmup_start_ratio = warmup_start_ratio  # 新增：起始 lr 比例 (e.g., 0.1 * base_lr)
         super().__init__(optimizer)
 
