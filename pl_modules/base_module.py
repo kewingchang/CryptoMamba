@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  # 修改：导
 class WarmupCosineScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, warmup_epochs, max_epochs, eta_min=1e-6, warmup_start_ratio=0.1):  # 新增 warmup_start_ratio，避免从 0 开始
         self.warmup_epochs = warmup_epochs
-        self.cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=1, eta_min=eta_min)  # 修改：用 CosineAnnealingWarmRestarts 替换 CosineAnnealingLR
+        self.cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=eta_min)  # 修改：用 CosineAnnealingWarmRestarts 替换 CosineAnnealingLR
         self.warmup_start_ratio = warmup_start_ratio  # 新增：起始 lr 比例 (e.g., 0.1 * base_lr)
         super().__init__(optimizer)
 
@@ -45,6 +45,8 @@ class BaseModule(pl.LightningModule):
         loss_type='rmse',
         max_epochs=1000,
         alpha=0.7,  # 新增：混合损失的权重，alpha for RMSE, (1-alpha) for Focal loss
+        feature_names=None,  # [新增] 接收特征名称列表
+        **kwargs
     ):
         super().__init__()
 
@@ -64,8 +66,15 @@ class BaseModule(pl.LightningModule):
 
         self.smooth_l1 = SmoothL1Loss(beta=0.5)  # 新增
 
-        # self.target_channel = 4  # Index for 'Close' in keys
+        # Index for 'Close' in keys
         self.target_channel = 3
+        self.feature_names = feature_names
+
+        if self.feature_names is not None and self.y_key in self.feature_names:
+            self.target_channel = self.feature_names.index(self.y_key)
+            print(f"[BaseModule] Target '{self.y_key}' found at channel index: {self.target_channel}")
+        else:
+            print(f"[BaseModule] Warning: '{self.y_key}' not found in features, defaulting target_channel to 3.")
 
         self.mse = nn.MSELoss()
         self.l1 = nn.L1Loss()
@@ -113,7 +122,7 @@ class BaseModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x = batch['features']
         y = batch[self.y_key]
-        y_old = batch[f'{self.y_key}_old']
+        y_old = batch[f'{self.y_key}_old'] # 注意：如果预测 log_return，这里 y_old 是上一日的 log_return
         if self.batch_size is None:
             self.batch_size = x.shape[0]
         y_hat = self.forward(x, y_old).reshape(-1)
@@ -138,17 +147,46 @@ class BaseModule(pl.LightningModule):
             loss = mse
         # ... 其他 elif 如 'mse' 等保持不变
 
-        # 计算差分
-        diff_pred = y_hat - y_old
-        diff_true = y - y_old
-        # 计算准确率acc (仅用于监控)
-        true_dir = (diff_true > 0).float()
-        pred_dir = (diff_pred > 0).float()
+        # [修改点 3]：准确率计算逻辑调整
+        # 如果是预测 Log Return，y 本身的正负就代表涨跌，不需要减去 y_old
+        # y > 0 表示涨，y < 0 表示跌
+        if self.y_key == 'log_return':
+            true_dir = (y > 0).float()
+            pred_dir = (y_hat > 0).float()
+        else:
+            # 旧逻辑：预测价格时，需要看 (Current - Old)
+            diff_pred = y_hat - y_old
+            diff_true = y - y_old
+            true_dir = (diff_true > 0).float()
+            pred_dir = (diff_pred > 0).float()   
         acc = (true_dir == pred_dir).float().mean()
+
+        # ==========================================
+        # 3. [新增] 价格还原与指标计算 (仅用于监控，不参与反向传播)
+        # ==========================================
+        if self.y_key == 'log_return':
+            # 这里的 Close 和 Close_old 是真实价格（未归一化，或者你需要确认是否被DataTransform归一化了）
+            # 根据你的 dataset.py 实现，batch 里应该有原始的 'Close' 和 'Close_old'
+            # 只要 DataTransform 里 keys 包含 'Close' 即可
+            
+            # 注意：DataTransform 输出的 tensor 可能是 float32
+            price_true = batch['Close']       # 今天的真实价格
+            price_old = batch['Close_old']    # 昨天的真实价格
+            
+            # 还原预测价格: P_t = P_{t-1} * exp(r_t)
+            price_pred = price_old * torch.exp(y_hat)
+            
+            # 计算“美元单位”的误差
+            mse = self.mse(price_pred, price_true)
+            rmse = torch.sqrt(mse)
+            mape = self.mape(price_pred, price_true)
+            l1 = self.l1(price_pred, price_true)
+            smooth_l1_loss = self.smooth_l1(price_pred, price_true)
 
         # 日志记录
         self.log("train/mse", mse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("train/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+        # 注意：预测 Log Return 时，MAPE 可能非常大或不稳定（因为真实值接近0），建议看 MAE/RMSE
         self.log("train/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("train/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("train/acc", acc, batch_size=self.batch_size, prog_bar=True)
@@ -165,19 +203,44 @@ class BaseModule(pl.LightningModule):
         y_hat = self.forward(x, y_old).reshape(-1)
         y, y_hat = self.denormalize(y, y_hat)
         mse = self.mse(y_hat, y)
+        mse_ret = self.mse(y_hat, y)
         rmse = torch.sqrt(mse)
         mape = self.mape(y_hat, y)
         l1 = self.l1(y_hat, y)
+        smooth_l1_loss = self.smooth_l1(y_hat, y)
 
-        smooth_l1_loss = self.smooth_l1(y_hat, y)  # 新增smooth_l1_loss
-
-         # 计算差分
-        diff_pred = y_hat - y_old
-        diff_true = y - y_old
-        # 计算准确率 (仅用于监控)
-        true_dir = (diff_true > 0).float()
-        pred_dir = (diff_pred > 0).float()
+        # [修改点 3]：准确率计算逻辑调整 (同上)
+        if self.y_key == 'log_return':
+            true_dir = (y > 0).float()
+            pred_dir = (y_hat > 0).float()
+        else:
+            diff_pred = y_hat - y_old
+            diff_true = y - y_old
+            true_dir = (diff_true > 0).float()
+            pred_dir = (diff_pred > 0).float()  
         acc = (true_dir == pred_dir).float().mean()
+
+        # ==========================================
+        # 3. [新增] 价格还原与指标计算 (仅用于监控，不参与反向传播)
+        # ==========================================
+        if self.y_key == 'log_return':
+            # 这里的 Close 和 Close_old 是真实价格（未归一化，或者你需要确认是否被DataTransform归一化了）
+            # 根据你的 dataset.py 实现，batch 里应该有原始的 'Close' 和 'Close_old'
+            # 只要 DataTransform 里 keys 包含 'Close' 即可
+            
+            # 注意：DataTransform 输出的 tensor 可能是 float32
+            price_true = batch['Close']       # 今天的真实价格
+            price_old = batch['Close_old']    # 昨天的真实价格
+            
+            # 还原预测价格: P_t = P_{t-1} * exp(r_t)
+            price_pred = price_old * torch.exp(y_hat)
+            
+            # 计算“美元单位”的误差
+            mse = self.mse(price_pred, price_true)
+            rmse = torch.sqrt(mse)
+            mape = self.mape(price_pred, price_true)
+            l1 = self.l1(price_pred, price_true)
+            smooth_l1_loss = self.smooth_l1(price_pred, price_true)
 
         self.log("val/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
         self.log("val/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
@@ -185,8 +248,9 @@ class BaseModule(pl.LightningModule):
         self.log("val/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("val/acc", acc, batch_size=self.batch_size, prog_bar=True)
         self.log("val/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
+        
         return {
-            "val_loss": mse,
+            "val_loss": mse_ret,
         }
     
     def test_step(self, batch, batch_idx):
@@ -198,18 +262,43 @@ class BaseModule(pl.LightningModule):
         y_hat = self.forward(x, y_old).reshape(-1)
         y, y_hat = self.denormalize(y, y_hat)
         mse = self.mse(y_hat, y)
+        mse_ret = self.mse(y_hat, y)
         rmse = torch.sqrt(mse)
         mape = self.mape(y_hat, y)
         l1 = self.l1(y_hat, y)
 
         smooth_l1_loss = self.smooth_l1(y_hat, y)  # 新增smooth_l1_loss
-         # 计算差分
-        diff_pred = y_hat - y_old
-        diff_true = y - y_old
-        # 计算准确率 (仅用于监控)
-        true_dir = (diff_true > 0).float()
-        pred_dir = (diff_pred > 0).float()
+        if self.y_key == 'log_return':
+            true_dir = (y > 0).float()
+            pred_dir = (y_hat > 0).float()
+        else:
+            diff_pred = y_hat - y_old
+            diff_true = y - y_old
+            true_dir = (diff_true > 0).float()
+            pred_dir = (diff_pred > 0).float()   
         acc = (true_dir == pred_dir).float().mean()
+
+        # ==========================================
+        # 3. [新增] 价格还原与指标计算 (仅用于监控，不参与反向传播)
+        # ==========================================
+        if self.y_key == 'log_return':
+            # 这里的 Close 和 Close_old 是真实价格（未归一化，或者你需要确认是否被DataTransform归一化了）
+            # 根据你的 dataset.py 实现，batch 里应该有原始的 'Close' 和 'Close_old'
+            # 只要 DataTransform 里 keys 包含 'Close' 即可
+            
+            # 注意：DataTransform 输出的 tensor 可能是 float32
+            price_true = batch['Close']       # 今天的真实价格
+            price_old = batch['Close_old']    # 昨天的真实价格
+            
+            # 还原预测价格: P_t = P_{t-1} * exp(r_t)
+            price_pred = price_old * torch.exp(y_hat)
+            
+            # 计算“美元单位”的误差
+            mse = self.mse(price_pred, price_true)
+            rmse = torch.sqrt(mse)
+            mape = self.mape(price_pred, price_true)
+            l1 = self.l1(price_pred, price_true)
+            smooth_l1_loss = self.smooth_l1(price_pred, price_true)
 
         self.log("test/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
         self.log("test/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
@@ -218,7 +307,7 @@ class BaseModule(pl.LightningModule):
         self.log("test/acc", acc, batch_size=self.batch_size, prog_bar=True)
         self.log("test/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
         return {
-            "test_loss": mse,
+            "test_loss": mse_ret,
         }
     
     def configure_optimizers(self):
