@@ -58,8 +58,8 @@ def main():
     # Define CSV columns
     columns = [
         'dir-name', 'additional_features',
-        'train/mae', 'train/mape', 'train/mse', 'train/rmse', 'train/rmse_price', 'train/acc', 'train/smooth_l1',
-        'val/mae', 'val/mape', 'val/mse', 'val/rmse', 'val/rmse_price', 'val/acc', 'val/smooth_l1',
+        'train/mae', 'train/mape', 'train/mse', 'train/rmse', 'train/acc', 'train/smooth_l1',
+        'val/mae', 'val/mape', 'val/mse', 'val/rmse', 'val/acc', 'val/smooth_l1',
         'test/mae', 'test/mape', 'test/mse', 'test/rmse', 'test/acc', 'test/smooth_l1',
         'note'
     ]
