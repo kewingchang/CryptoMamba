@@ -205,8 +205,8 @@ if __name__ == "__main__":
     # 添加早停
     early_stop_callback = EarlyStopping(
         monitor="val/rmse",
-        min_delta=0.001,
-        patience=100,
+        min_delta=0.1,
+        patience=150,
         verbose=True,
         mode="min"
     )
