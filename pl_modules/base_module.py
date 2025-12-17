@@ -99,25 +99,52 @@ class BaseModule(pl.LightningModule):
         self.normalization_coeffs = (scale, shift)
 
     def denormalize(self, y, y_hat):
-        if self.normalization_coeffs is not None:
-            scale, shift = self.normalization_coeffs
-            if y is not None:
-                y = y * scale + shift
-            y_hat = y_hat * scale + shift
-        elif hasattr(self.model, 'revin') and self.model.revin is not None:
-            re = self.model.revin
-            # print("Before denorm: y_hat=", y_hat.mean(), "stdev=", re.stdev.mean())  # 检查stats是否从norm继承
-            target_idx = self.target_channel
-            if re.affine:
-                y_hat = y_hat - re.affine_bias[target_idx]
-                y_hat = y_hat / (re.affine_weight[target_idx] + re.eps)
-            y_hat = y_hat * re.stdev[:, 0, target_idx]
-            if re.subtract_last:
-                y_hat = y_hat + re.last[:, 0, target_idx]
-            else:
-                y_hat = y_hat + re.mean[:, 0, target_idx]
-            # print("After denorm: y_hat=", y_hat.mean())  # 应恢复原始尺度
-        return y, y_hat
+            # 1. 如果使用了 Dataset 级别的归一化 (min-max 等)
+            if self.normalization_coeffs is not None:
+                scale, shift = self.normalization_coeffs
+                if y is not None:
+                    y = y * scale + shift
+                y_hat = y_hat * scale + shift
+            
+            # 2. 如果使用了 RevIN (模型级别的归一化)
+            elif hasattr(self.model, 'revin') and self.model.revin is not None:
+                re = self.model.revin
+                
+                # [关键修复开始] --------------------------------------------
+                # 我们需要查找当前的 target (log_return) 在 RevIN 内部对应的索引
+                # 如果 target 被 skip 了，就找不到索引，那么就不需要反归一化
+                
+                target_global_idx = self.target_channel # 全局索引 (例如 4)
+                effective_idx = None # RevIN 内部的有效索引
+                
+                # 检查模型是否有 norm_indices (记录了哪些特征被归一化了)
+                if hasattr(self.model, 'norm_indices') and self.model.norm_indices is not None:
+                    # 在 norm_indices 中查找 target_global_idx
+                    # (self.model.norm_indices == target_global_idx) 会返回一个布尔掩码
+                    matches = (self.model.norm_indices == target_global_idx).nonzero(as_tuple=True)[0]
+                    
+                    if len(matches) > 0:
+                        # 找到了！说明 target 被归一化了
+                        effective_idx = matches.item()
+                else:
+                    # 兼容旧模型或无 selective RevIN 的情况，默认索引一致
+                    effective_idx = target_global_idx
+
+                # 只有当找到了有效索引，且该索引在 RevIN 参数范围内时，才执行反归一化
+                if effective_idx is not None and effective_idx < re.num_features:
+                    if re.affine:
+                        y_hat = y_hat - re.affine_bias[effective_idx]
+                        y_hat = y_hat / (re.affine_weight[effective_idx] + re.eps)
+                    
+                    y_hat = y_hat * re.stdev[:, 0, effective_idx]
+                    
+                    if re.subtract_last:
+                        y_hat = y_hat + re.last[:, 0, effective_idx]
+                    else:
+                        y_hat = y_hat + re.mean[:, 0, effective_idx]
+                # [关键修复结束] --------------------------------------------
+                
+            return y, y_hat
 
     def training_step(self, batch, batch_idx):
         x = batch['features']
