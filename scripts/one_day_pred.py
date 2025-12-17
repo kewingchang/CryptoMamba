@@ -247,13 +247,13 @@ if __name__ == "__main__":
     if b < 100:
         tmp = round((100 - b), 2)
         slp = today_price * 0.98
-        print_and_write(txt_file, f'> Smart trade: {tmp}% buy')
         print(f"> 2nd Order: {round(today_price * 0.99, 2)}")
+        print_and_write(txt_file, f'> Smart trade: {tmp}% buy')
     if s < 100:
         tmp = round((100 - s), 2)
         slp = today_price * 1.02
-        print_and_write(txt_file, f'> Smart trade: {tmp}% sell')
         print(f"> 2nd Order: {round(today_price * 1.01, 2)}")
+        print_and_write(txt_file, f'> Smart trade: {tmp}% sell')
         
     print("\n")
     print(f"> TP price: {round(pred_price, 2)}")
