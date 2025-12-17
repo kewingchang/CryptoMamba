@@ -1,18 +1,25 @@
 # data_transforms.py
 import torch
-import numpy as np  # 新增 np for Beta 采样
+import numpy as np
 
 class DataTransform:
     def __init__(self, is_train, use_volume=False, additional_features=[], mixup_alpha=0.5, mixup_prob=0.3):
         self.is_train = is_train
-        # self.keys = ['Timestamp', 'Open', 'High', 'Low', 'Close']
-        self.keys = ['Open', 'High', 'Low', 'Close']
+        
+        # [修改点 1]: 从特征列表中移除 'Close'
+        # 现在的特征: ['Open', 'High', 'Low', 'Volume'?, 'log_return'...]
+        self.keys = ['Open', 'High', 'Low'] 
+                
         if use_volume:
             self.keys.append('Volume')
+        
+        # additional_features 里包含了 'log_return'
         self.keys += additional_features
-        print(self.keys)
-        self.mixup_alpha = mixup_alpha  # 新增：Beta 分布 alpha (1.0 默认均匀混合)
-        self.mixup_prob = mixup_prob    # 新增：应用 mixup 概率 (0.5 默认)
+        
+        print(f"Model Input Features: {self.keys}") # 打印确认一下不含 Close
+        
+        self.mixup_alpha = mixup_alpha
+        self.mixup_prob = mixup_prob
 
     def __call__(self, window, other_window=None):
         output = {}
@@ -29,22 +36,48 @@ class DataTransform:
         features = torch.cat(features_list, 0)
         output['features'] = features
 
-        # 新增：如果 is_train 且 other_window，不需随机（已在 Dataset 判断），直接混合
-        if self.is_train and other_window is not None:
-            lambda_ = np.random.beta(self.mixup_alpha, self.mixup_alpha)  # 抽样 lambda
-            lambda_ = torch.tensor(lambda_).to(features.device)  # 转 tensor
+        # [修改点 2]: 强制单独提取 Close 价格
+        # 这一步是为了 base_module.py 的“价格还原”逻辑能找到 batch['Close']
+        # 它不会进入 output['features']，所以模型训练时看不到它
+        close_data = torch.tensor(window.get('Close').tolist())
+        output['Close'] = close_data[-1]
+        output['Close_old'] = close_data[-2]
 
-            # 混合 features (时序序列)
-            other_features = torch.cat([torch.tensor(other_window.get(key).tolist())[:-1].reshape(1, -1) for key in self.keys if key != 'Timestamp_orig'], 0)
+        # Mixup 逻辑 (保持不变)
+        if self.is_train and other_window is not None:
+            lambda_ = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+            lambda_ = torch.tensor(lambda_).to(features.device)
+
+            # 混合 features
+            # 注意：other_window 的特征提取也要遵循 self.keys (不含 Close)
+            other_features_list = []
+            for key in self.keys:
+                if key != 'Timestamp_orig':
+                    val = other_window.get(key)
+                    if val is None:
+                         d = torch.zeros(len(window))
+                    else:
+                         d = torch.tensor(val.tolist())
+                    other_features_list.append(d[:-1].reshape(1, -1))
+            
+            other_features = torch.cat(other_features_list, 0)
             output['features'] = lambda_ * features + (1 - lambda_) * other_features
 
-            # 混合 label (Close 和 Close_old 等输出)
+            # 混合 label (log_return 等)
             for key in self.keys:
-                if key == 'Timestamp_orig':
-                    continue
-                other_data = torch.tensor(other_window.get(key).tolist())
-                output[key] = lambda_ * output[key] + (1 - lambda_) * other_data[-1]
-                output[f'{key}_old'] = lambda_ * output[f'{key}_old'] + (1 - lambda_) * other_data[-2]
+                if key == 'Timestamp_orig': continue
+                # 注意：这里只混合了 self.keys 里的 label
+                # Close 的混合需要单独处理
+                other_val = other_window.get(key)
+                if other_val is not None:
+                    other_data = torch.tensor(other_val.tolist())
+                    output[key] = lambda_ * output[key] + (1 - lambda_) * other_data[-1]
+                    output[f'{key}_old'] = lambda_ * output[f'{key}_old'] + (1 - lambda_) * other_data[-2]
+            
+            # [修改点 3]: 单独混合 Close (为了保持一致性)
+            other_close = torch.tensor(other_window.get('Close').tolist())
+            output['Close'] = lambda_ * output['Close'] + (1 - lambda_) * other_close[-1]
+            output['Close_old'] = lambda_ * output['Close_old'] + (1 - lambda_) * other_close[-2]
 
         # === 新增：始终输出 Timestamp（仅用于绘图、窗口筛选，不作为特征输入模型）===
         # 即使 self.keys 不包含 Timestamp，也把原始 window 的 Timestamp 序列/最后一个值传出去
