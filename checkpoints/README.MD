@@ -14,14 +14,14 @@
 
 </div>
 
-## ETH_251217.ckpt
+## ETH_251218.ckpt
 
-来源：251217训练
+来源：251218训练
 
 <div align="center">
 
-| Model | RMSE | MAPE | MAE | Parameters |
-| :--: | :--: | :--: | :--: |  :--: |
-| CryptoMamba-v | **91.37** | **0.0224** | **63.41** | **136k** |
+| Model | RMSE | MAPE | MAE | ACC | Parameters |
+| :--: | :--: | :--: | :--: | :--: | :--: |
+| CryptoMamba-v | **90.93** | **0.0224** | **62.83** | | **0.59375** | **136k** |
 
 </div>
