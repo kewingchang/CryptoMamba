@@ -1,8 +1,8 @@
 # configs/models/CryptoMamba/v2.yaml
 target: pl_modules.cmamba_module.CryptoMambaModule
 params:
-    num_features: 4
-    hidden_dims: [4, 16, 32, 1]
+    num_features: 5
+    hidden_dims: [5, 16, 32, 1]
     d_states: 64
     layer_density: 4
     revin: True
