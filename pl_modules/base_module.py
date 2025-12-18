@@ -216,7 +216,7 @@ class BaseModule(pl.LightningModule):
         # 注意：预测 Log Return 时，MAPE 可能非常大或不稳定（因为真实值接近0），建议看 MAE/RMSE
         self.log("train/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("train/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("train/acc", acc, batch_size=self.batch_size, prog_bar=True)
+        self.log("train/acc", acc, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("train/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
 
         return loss  # 返回总损失
@@ -269,11 +269,11 @@ class BaseModule(pl.LightningModule):
             l1 = self.l1(price_pred, price_true)
             smooth_l1_loss = self.smooth_l1(price_pred, price_true)
 
-        self.log("val/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
+        self.log("val/mse", mse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("val/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("val/acc", acc, batch_size=self.batch_size, prog_bar=True)
+        self.log("val/acc", acc, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("val/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
         
         return {
@@ -327,11 +327,11 @@ class BaseModule(pl.LightningModule):
             l1 = self.l1(price_pred, price_true)
             smooth_l1_loss = self.smooth_l1(price_pred, price_true)
 
-        self.log("test/mse", mse.detach(), sync_dist=True, batch_size=self.batch_size, prog_bar=False)
+        self.log("test/mse", mse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         self.log("test/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("test/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("test/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("test/acc", acc, batch_size=self.batch_size, prog_bar=True)
+        self.log("test/acc", acc, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
         self.log("test/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
         return {
             "test_loss": mse_ret,
