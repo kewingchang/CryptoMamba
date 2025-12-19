@@ -250,6 +250,10 @@ if __name__ == "__main__":
     print_and_write(txt_file, f'Predicted log_return: {round(pred_log_return, 5)}%')
     print_and_write(txt_file, f'Current ATR_14: {round(last_atr, 2)}')
 
+    print_and_write(txt_file, '-' * 30)
+    direction = "LONG" if pred_price > today_price else "SHORT"
+    print_and_write(txt_file, f'{direction}')
+
     # 7. 实战交易逻辑 (Real-World Trading Logic)
     print_and_write(txt_file, '-' * 30)
     print_and_write(txt_file, '>>> TRADING SIGNAL ANALYSIS <<<')
