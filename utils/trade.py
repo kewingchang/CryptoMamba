@@ -1,3 +1,38 @@
+# 示例调用
+# orders, sl = calculate_trade_setup(2826, "SHORT", 185)
+# print(f"Stop Loss: {sl}") 
+# Result: Stop Loss 3011. Orders at 2826, 2881.5, 2937
+def calculate_trade_setup(entry_price, signal_direction, atr, leverage=2):
+    """
+    根据 ATR 计算 DCA 挂单点和止损点
+    Strategy: 30% Market, 30% @0.3ATR, 40% @0.6ATR. Stop @1.0ATR
+    """
+    atr_Stop_Multiplier = 1.0
+    dca_1_Multiplier = 0.3
+    dca_2_Multiplier = 0.6
+    
+    orders = []
+    
+    if signal_direction == "LONG":
+        stop_loss = entry_price - (atr * atr_Stop_Multiplier)
+        
+        # Order 1: Market
+        orders.append({'type': 'market', 'size': 0.3, 'price': entry_price})
+        # Order 2: Limit Buy (DCA 1)
+        orders.append({'type': 'limit', 'size': 0.3, 'price': entry_price - (atr * dca_1_Multiplier)})
+        # Order 3: Limit Buy (DCA 2)
+        orders.append({'type': 'limit', 'size': 0.4, 'price': entry_price - (atr * dca_2_Multiplier)})
+        
+    elif signal_direction == "SHORT":
+        stop_loss = entry_price + (atr * atr_Stop_Multiplier)
+        
+        # Order 1: Market
+        orders.append({'type': 'market', 'size': 0.3, 'price': entry_price})
+        # Order 2: Limit Sell (DCA 1)
+        orders.append({'type': 'limit', 'size': 0.3, 'price': entry_price + (atr * dca_1_Multiplier)})
+        # Order 3: Limit Sell (DCA 2)
+        orders.append({'type': 'limit', 'size': 0.4, 'price': entry_price + (atr * dca_2_Multiplier)})   
+    return orders, stop_loss
 
 def buy_sell_smart(today, pred, balance, shares, risk=5):
     diff = pred * risk / 100
