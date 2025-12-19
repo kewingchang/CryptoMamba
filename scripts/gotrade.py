@@ -263,29 +263,35 @@ if __name__ == "__main__":
     # 避免除以0
     if diff_threshold == 0: diff_threshold = 1e-8
     x_factor = abs(raw_diff) / diff_threshold
-    
-    # 设定实盘门槛 (如前文讨论，设为 0.2)
-    X_THRESHOLD = 0.2
+
+    # 设定两个门槛
+    X_STRONG_THRESHOLD = 0.5
+    X_WEAK_THRESHOLD = 0.2
 
     print_and_write(txt_file, f'Risk Config (MAPE): {args.risk}%')
-    print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)} (Threshold: {X_THRESHOLD})')
+    print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)}')
 
-    # B. 决策分支
-    if x_factor < X_THRESHOLD:
-        print_and_write(txt_file, f'[DECISION]: WAIT / NO TRADE')
-        print_and_write(txt_file, f'Reason: Signal ({round(pct_change, 2)}%) is within noise range (< {round(risk_percent*X_THRESHOLD*100, 2)}%).')
+    trade_mode = None
+    
+    # 决策逻辑分支
+    if x_factor >= X_STRONG_THRESHOLD:
+        trade_mode = 'aggressive'
+        print_and_write(txt_file, f'[DECISION]: OPEN {direction} (STRONG SIGNAL)')
+    elif x_factor >= X_WEAK_THRESHOLD:
+        trade_mode = 'conservative'
+        print_and_write(txt_file, f'[DECISION]: OPEN {direction} (WEAK SIGNAL - SNIPER MODE)')
+        print_and_write(txt_file, f'Reason: Low expected return. Using limit orders only to catch wicks.')
     else:
-        direction = "LONG" if pred_price > today_price else "SHORT"
-        print_and_write(txt_file, f'[DECISION]: OPEN {direction}')
-        print_and_write(txt_file, f'Reason: Strong signal (x={round(x_factor, 2)} >= {X_THRESHOLD})')
-        
-        # C. 计算 ATR 动态 DCA 挂单
-        # 使用我们在 trade.py 中定义的新函数
-        orders, stop_loss = calculate_trade_setup(today_price, direction, last_atr)
+        print_and_write(txt_file, f'[DECISION]: WAIT / NO TRADE')
+        print_and_write(txt_file, f'Reason: Signal too weak (x < {X_WEAK_THRESHOLD})')
+
+    # 执行计算
+    if trade_mode:
+        orders, stop_loss = calculate_trade_setup(today_price, direction, last_atr, mode=trade_mode)
         
         print_and_write(txt_file, '-' * 20)
-        print_and_write(txt_file, f'STOP LOSS: {round(stop_loss, 2)} (1.0x ATR)')
-        print_and_write(txt_file, 'EXECUTION PLAN (ATR Grid):')
+        print_and_write(txt_file, f'STOP LOSS: {round(stop_loss, 2)}')
+        print_and_write(txt_file, f'EXECUTION PLAN ({trade_mode.upper()}):')
         
         for idx, order in enumerate(orders):
             o_type = order['type'].upper()
@@ -297,5 +303,3 @@ if __name__ == "__main__":
                 price_str = f"{round(order['price'], 2)}"
                 
             print_and_write(txt_file, f"  Order #{idx+1}: {o_type} | Size: {size}% | Price: {price_str}")
-            
-    print_and_write(txt_file, '-' * 30)
