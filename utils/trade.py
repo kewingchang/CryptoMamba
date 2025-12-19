@@ -1,38 +1,54 @@
-# 示例调用
-# orders, sl = calculate_trade_setup(2826, "SHORT", 185)
-# print(f"Stop Loss: {sl}") 
-# Result: Stop Loss 3011. Orders at 2826, 2881.5, 2937
-def calculate_trade_setup(entry_price, signal_direction, atr, leverage=2):
+
+def calculate_trade_setup(entry_price, signal_direction, atr, mode='aggressive'):
     """
-    根据 ATR 计算 DCA 挂单点和止损点
-    Strategy: 30% Market, 30% @0.3ATR, 40% @0.6ATR. Stop @1.0ATR
-    """
-    atr_Stop_Multiplier = 1.0
-    dca_1_Multiplier = 0.3
-    dca_2_Multiplier = 0.6
+    根据 ATR 和 信号强弱模式 计算挂单策略
     
+    Args:
+        mode (str): 'aggressive' (强信号) 或 'conservative' (弱信号)
+    """
     orders = []
+    stop_loss = 0
     
+    # === 策略参数配置 ===
+    if mode == 'aggressive':
+        # 强信号：怕踏空，先买一部分，防画门
+        # 仓位: 30% 市价, 30% @-0.3ATR, 40% @-0.6ATR
+        # 止损: 1.0 ATR
+        atr_stop_mult = 1.0
+        levels = [
+            {'type': 'market', 'size': 0.3, 'offset': 0.0},
+            {'type': 'limit',  'size': 0.3, 'offset': 0.3},
+            {'type': 'limit',  'size': 0.4, 'offset': 0.6}
+        ]
+        
+    elif mode == 'conservative':
+        # 弱信号：预测涨幅小，只接针，不追高
+        # 仓位: 0% 市价, 50% @-0.5ATR, 50% @-0.8ATR (更深的位置)
+        # 止损: 1.2 ATR (给更多空间，因为入场点已经很低了)
+        atr_stop_mult = 1.0
+        levels = [
+            # 注意：没有 market 单
+            {'type': 'limit', 'size': 0.5, 'offset': 0.5},
+            {'type': 'limit', 'size': 0.5, 'offset': 0.8}
+        ]
+    else:
+        return [], 0
+
+    # === 生成订单 ===
     if signal_direction == "LONG":
-        stop_loss = entry_price - (atr * atr_Stop_Multiplier)
-        
-        # Order 1: Market
-        orders.append({'type': 'market', 'size': 0.3, 'price': entry_price})
-        # Order 2: Limit Buy (DCA 1)
-        orders.append({'type': 'limit', 'size': 0.3, 'price': entry_price - (atr * dca_1_Multiplier)})
-        # Order 3: Limit Buy (DCA 2)
-        orders.append({'type': 'limit', 'size': 0.4, 'price': entry_price - (atr * dca_2_Multiplier)})
-        
+        stop_loss = entry_price - (atr * atr_stop_mult)
+        for lvl in levels:
+            price = entry_price if lvl['type'] == 'market' else entry_price - (atr * lvl['offset'])
+            orders.append({'type': lvl['type'], 'size': lvl['size'], 'price': price})
+            
     elif signal_direction == "SHORT":
-        stop_loss = entry_price + (atr * atr_Stop_Multiplier)
-        
-        # Order 1: Market
-        orders.append({'type': 'market', 'size': 0.3, 'price': entry_price})
-        # Order 2: Limit Sell (DCA 1)
-        orders.append({'type': 'limit', 'size': 0.3, 'price': entry_price + (atr * dca_1_Multiplier)})
-        # Order 3: Limit Sell (DCA 2)
-        orders.append({'type': 'limit', 'size': 0.4, 'price': entry_price + (atr * dca_2_Multiplier)})   
+        stop_loss = entry_price + (atr * atr_stop_mult)
+        for lvl in levels:
+            price = entry_price if lvl['type'] == 'market' else entry_price + (atr * lvl['offset'])
+            orders.append({'type': lvl['type'], 'size': lvl['size'], 'price': price})
+            
     return orders, stop_loss
+
 
 def buy_sell_smart(today, pred, balance, shares, risk=5):
     diff = pred * risk / 100
