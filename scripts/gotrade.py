@@ -12,7 +12,7 @@ from datetime import datetime
 from argparse import ArgumentParser
 from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
-# [修改] 引入新的计算函数
+# 引入新的计算函数
 from utils.trade import buy_sell_vanilla, buy_sell_smart, calculate_trade_setup
 import warnings
 
@@ -182,12 +182,23 @@ if __name__ == "__main__":
     
     # 记录"今天" (input_df 的最后一行) 的价格，作为还原基准
     last_close_price = float(input_df.iloc[-1]['Close'])
-    # 提取最新的 ATR_14
-    if 'ATR_14' in input_df.columns:
-        last_atr = float(input_df.iloc[-1]['ATR_14'])
-    else:
-        print("Warning: ATR_14 column not found, defaulting to 2.2% of price")
-        last_atr = last_close_price * 0.022
+
+    # 严格检查并提取指标数据
+    required_cols = ['ATR_14', 'EMA_7', 'EMA_14']
+    # 检查列是否存在
+    missing_cols = [col for col in required_cols if col not in input_df.columns]
+    if missing_cols:
+        raise ValueError(f"CRITICAL ERROR: Missing required columns in data CSV: {missing_cols}. "
+                         f"Cannot proceed with trading logic.")
+    # 检查是否有 NaN 值 (EMA计算初期可能有NaN)
+    if input_df.iloc[-1][required_cols].isnull().any():
+        raise ValueError(f"CRITICAL ERROR: NaN values found in the latest row for {required_cols}. "
+                         f"Need more historical data to calculate indicators.")
+
+    # 安全提取
+    last_atr = float(input_df.iloc[-1]['ATR_14'])
+    last_ema_7 = float(input_df.iloc[-1]['EMA_7'])
+    last_ema_14 = float(input_df.iloc[-1]['EMA_14'])
 
     txt_file = init_dirs(args, pred_date)
 
@@ -291,7 +302,14 @@ if __name__ == "__main__":
 
     # 执行计算
     if trade_mode:
-        orders, stop_loss = calculate_trade_setup(today_price, direction, last_atr, mode=trade_mode)
+        orders, stop_loss = calculate_trade_setup(
+            today_price,
+            direction,
+            last_atr,
+            mode=trade_mode,
+            ema7=last_ema_7,
+            ema14=last_ema_14
+        )
         
         print_and_write(txt_file, '-' * 20)
         print_and_write(txt_file, f'STOP LOSS: {round(stop_loss, 2)}')

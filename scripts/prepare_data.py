@@ -36,14 +36,14 @@ df = df.reset_index()
 if pd.api.types.is_datetime64_any_dtype(df['Date']):
     df['Date'] = df['Date'].dt.tz_localize(None)
 
-# 2. 转换日期格式
+# 转换日期格式
 df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
 
-# 2. 按日期升序排列 (Oldest to Newest)
-# 金融时间序列计算(shift/rolling/ta-lib)必须基于时间顺序
+# 按日期升序排列 (Oldest to Newest) - 关键步骤
 df = df.sort_values('Date', ascending=True)
 
 # 3. 设置为索引
+# 注意：所有的 shift/rolling/ta 计算都应在此之后进行
 df = df.set_index('Date')
 
 # Ensure required columns exist
@@ -83,6 +83,40 @@ try:
     print("Feature 'ATR_14' added.")
 except Exception as e:
     print(f"Error calculating ATR_14: {e}")
+
+# 4.3 【新增】添加 EMA 7 和 EMA 14
+# Exponential Moving Average (指数移动平均线)
+try:
+    df['EMA_7'] = ta.trend.ema_indicator(
+        close=df['Close'],
+        window=7
+    )
+    df['EMA_14'] = ta.trend.ema_indicator(
+        close=df['Close'],
+        window=14
+    )
+    print("Features 'EMA_7' and 'EMA_14' added.")
+except Exception as e:
+    print(f"Error calculating EMA: {e}")
+
+# 4.4 Next day of year (Cyclical Time Features)
+# 【逻辑修复】: 直接使用 df.index 计算，确保与 DataFrame 行对齐
+try:
+    # 获取索引中的日期并加1天
+    next_dates = df.index + pd.Timedelta(days=1)
+    # 计算 day of year
+    next_day_of_year = next_dates.dayofyear    
+    # 计算 cyclical features (Sin/Cos)
+    # 使用 365.25 来考虑闰年平均值
+    next_day_sin = np.sin(2 * np.pi * next_day_of_year / 365.25)
+    next_day_cos = np.cos(2 * np.pi * next_day_of_year / 365.25)
+    
+    # 计算角度 (Arctan2)
+    df['next_yr_angle'] = np.arctan2(next_day_sin, next_day_cos)
+    print("Feature 'next_yr_angle' added.")
+except Exception as e:
+    print(f"Error calculating date features: {e}")
+
 # --- 特征工程结束 ---
 
 # Reset index to make Date a column again for saving
