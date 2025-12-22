@@ -97,14 +97,30 @@ def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     normalize = model_config.get('normalize', False)
-    # [新增] 注入参数
+    
+    # === [注入训练配置中的超参数] ===
+    hyperparams = config.get('hyperparams')
+    if hyperparams is not None:
+        for key in hyperparams.keys():
+            # 这会将 y_key: 'log_return' 注入到 params 中
+            model_config.get('params')[key] = hyperparams.get(key)
+
+    # 注入特征名称
     if feature_names is not None:
         model_config.get('params')['feature_names'] = feature_names
     if skip_revin is not None:
         model_config.get('params')['skip_revin'] = skip_revin
+        
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
-    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'),weights_only=False)
+    
+    # 使用更新后的 params 加载模型
+    model = model_class.load_from_checkpoint(
+        ckpt_path, 
+        **model_config.get('params'),
+        weights_only=False
+    )
     model.cuda()
+    model.eval() # 预测模式
     return model, normalize
 
 
