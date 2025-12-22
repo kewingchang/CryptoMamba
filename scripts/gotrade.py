@@ -118,13 +118,13 @@ if __name__ == "__main__":
 
     use_volume = config.get('use_volume', args.use_volume)
 
-    # [移位] 先创建 Transform 以获取 keys
-    train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
-    val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
-    test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
-
-    # [新增] 获取 feature_names
-    feature_names = [k for k in test_transform.keys if k != 'Timestamp_orig']
+    # 获取 feature_names
+    # feature_names = [k for k in test_transform.keys if k != 'Timestamp_orig']
+    feature_names = ['Open', 'High', 'Low'] 
+    if use_volume:
+        feature_names.append('Volume')
+    # additional_features 里包含了 'log_return'
+    feature_names += config.get('additional_features', [])
     skip_revin_list = config.get('skip_revin', [])
 
     print(f"Features for inference: {feature_names}")
@@ -143,16 +143,6 @@ if __name__ == "__main__":
     data['log_return'] = np.log(data['Close'] + 1e-8) - np.log(data['Close'].shift(1) + 1e-8)
     data['log_return'] = data['log_return'].fillna(0.0) # 填充第一行
     data['log_return'] = data['log_return'].replace([np.inf, -np.inf], 0.0)
-    
-    data_module = CMambaDataModule(data_config,
-                                   train_transform=train_transform,
-                                   val_transform=val_transform,
-                                   test_transform=test_transform,
-                                   batch_size=1,
-                                   distributed_sampler=False,
-                                   num_workers=1,
-                                   normalize=normalize,
-                                   )
     
     # end_date = "2024-27-10"
     if args.date is None:
