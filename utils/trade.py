@@ -47,8 +47,9 @@ def calculate_trade_setup(entry_price, signal_direction, atr, mode='aggressive',
         atr_stop_mult = 1.0
         
         setup = [
-            {'type': 'limit', 'size': 0.5, 'offset': 0.5, 'ema': ema14}, # 保守首单参考 EMA14
-            {'type': 'limit', 'size': 0.5, 'offset': 0.8, 'ema': None}   # 深水区只看统计学波动
+            {'type': 'limit', 'size': 0.3, 'offset': 0.3, 'ema': ema7},
+            {'type': 'limit', 'size': 0.3, 'offset': 0.6, 'ema': ema14},
+            {'type': 'limit', 'size': 0.4, 'offset': 0.8, 'ema': None}
         ]
     else:
         return [], 0
