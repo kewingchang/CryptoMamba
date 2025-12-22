@@ -96,14 +96,30 @@ def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
     model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     normalize = model_config.get('normalize', False)
-    # [新增] 注入参数
+    
+    # === [注入训练配置中的超参数] ===
+    hyperparams = config.get('hyperparams')
+    if hyperparams is not None:
+        for key in hyperparams.keys():
+            # 这会将 y_key: 'log_return' 注入到 params 中
+            model_config.get('params')[key] = hyperparams.get(key)
+
+    # 注入特征名称
     if feature_names is not None:
         model_config.get('params')['feature_names'] = feature_names
     if skip_revin is not None:
         model_config.get('params')['skip_revin'] = skip_revin
+        
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
-    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'),weights_only=False)
+    
+    # 使用更新后的 params 加载模型
+    model = model_class.load_from_checkpoint(
+        ckpt_path, 
+        **model_config.get('params'),
+        weights_only=False
+    )
     model.cuda()
+    model.eval() # 预测模式
     return model, normalize
 
 
@@ -117,9 +133,7 @@ if __name__ == "__main__":
 
     use_volume = config.get('use_volume', args.use_volume)
 
-    # [移位] 先创建 Transform 以获取 keys
-    train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
-    val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    # 先创建 Transform 以获取 keys
     test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
 
     # [新增] 获取 feature_names
@@ -142,16 +156,6 @@ if __name__ == "__main__":
     data['log_return'] = np.log(data['Close'] + 1e-8) - np.log(data['Close'].shift(1) + 1e-8)
     data['log_return'] = data['log_return'].fillna(0.0) # 填充第一行
     data['log_return'] = data['log_return'].replace([np.inf, -np.inf], 0.0)
-    
-    data_module = CMambaDataModule(data_config,
-                                   train_transform=train_transform,
-                                   val_transform=val_transform,
-                                   test_transform=test_transform,
-                                   batch_size=1,
-                                   distributed_sampler=False,
-                                   num_workers=1,
-                                   normalize=normalize,
-                                   )
     
     # end_date = "2024-27-10"
     if args.date is None:
