@@ -10,6 +10,22 @@ from torch.nn import SmoothL1Loss  # 新增
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts  # 修改：导入 CosineAnnealingWarmRestarts 
 
 
+# [新增] 分位数损失函数
+class QuantileLoss(nn.Module):
+    def __init__(self, quantiles):
+        super().__init__()
+        self.quantiles = quantiles # list e.g., [0.05, 0.30]
+
+    def forward(self, preds, target):
+        # preds: (B, num_quantiles)
+        # target: (B) or (B, 1)
+        loss = 0
+        target = target.view(-1, 1) # Ensure (B, 1)
+        for i, q in enumerate(self.quantiles):
+            error = target - preds[:, i:i+1]
+            loss += torch.max(q * error, (q - 1) * error).mean()
+        return loss
+
 class WarmupCosineScheduler(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, warmup_epochs, max_epochs, eta_min=1e-6, warmup_start_ratio=0.1):  # 新增 warmup_start_ratio，避免从 0 开始
         self.warmup_epochs = warmup_epochs
@@ -46,6 +62,7 @@ class BaseModule(pl.LightningModule):
         max_epochs=1000,
         alpha=0.7,  # 新增：混合损失的权重，alpha for RMSE, (1-alpha) for Focal loss
         feature_names=None,  # [新增] 接收特征名称列表
+        quantiles=None, # [新增] 接收分位数列表，例如 [0.05, 0.30]
         **kwargs
     ):
         super().__init__()
@@ -63,6 +80,14 @@ class BaseModule(pl.LightningModule):
         self.loss_type = loss_type  # 改名为 loss_type，以区分混合
         self.max_epochs = max_epochs
         self.alpha = alpha  # 新增权重
+        self.quantiles = quantiles
+
+        # [新增] 初始化 Loss
+        if self.loss_type == 'quantile':
+            assert self.quantiles is not None, "Quantiles must be provided for quantile loss"
+            self.criterion = QuantileLoss(self.quantiles)
+        else:
+            self.criterion = nn.MSELoss() # fallback default
 
         self.smooth_l1 = SmoothL1Loss(beta=0.5)  # 新增
 
@@ -86,10 +111,16 @@ class BaseModule(pl.LightningModule):
         self.normalization_coeffs = None
 
     def forward(self, x, y_old=None):
-        if self.mode == 'default':
-            return self.model(x).reshape(-1)
-        elif self.mode == 'diff':
-            return self.model(x).reshape(-1) + y_old
+        # [修改] 移除 reshape(-1)，因为 cmamba 内部已经处理了 output_dim=1 的情况
+        # 且如果是 quantile，我们需要保留 (B, 2) 形状
+        out = self.model(x)
+        if self.mode == 'diff':
+             # 注意：如果是多头输出，diff 模式可能需要广播 y_old
+             # 暂时假设 quantile 模型不使用 'diff' 模式
+             if out.dim() > 1:
+                 return out + y_old.unsqueeze(1)
+             return out + y_old
+        return out
         
     def set_normalization_coeffs(self, factors):
         if factors is None:
@@ -110,7 +141,6 @@ class BaseModule(pl.LightningModule):
             elif hasattr(self.model, 'revin') and self.model.revin is not None:
                 re = self.model.revin
                 
-                # [关键修复开始] --------------------------------------------
                 # 我们需要查找当前的 target (log_return) 在 RevIN 内部对应的索引
                 # 如果 target 被 skip 了，就找不到索引，那么就不需要反归一化
                 
@@ -131,211 +161,112 @@ class BaseModule(pl.LightningModule):
                     effective_idx = target_global_idx
 
                 # 只有当找到了有效索引，且该索引在 RevIN 参数范围内时，才执行反归一化
+                # if effective_idx is not None and effective_idx < re.num_features:
+                #     if re.affine:
+                #         y_hat = y_hat - re.affine_bias[effective_idx]
+                #         y_hat = y_hat / (re.affine_weight[effective_idx] + re.eps)
+                    
+                #     y_hat = y_hat * re.stdev[:, 0, effective_idx]
+                    
+                #     if re.subtract_last:
+                #         y_hat = y_hat + re.last[:, 0, effective_idx]
+                #     else:
+                #         y_hat = y_hat + re.mean[:, 0, effective_idx]
                 if effective_idx is not None and effective_idx < re.num_features:
+                    # 获取统计量
+                    stdev = re.stdev[:, 0, effective_idx]
+                    mean = re.mean[:, 0, effective_idx] if not re.subtract_last else re.last[:, 0, effective_idx]
+                    
+                    # [修改] 支持多头输出的反归一化
+                    # y_hat 可能是 (B, 2)，stdev 是 (B,)
+                    # 需要 unsqueeze stdev 变成 (B, 1) 以进行广播
+                    if y_hat.dim() > 1:
+                         stdev = stdev.unsqueeze(1)
+                         mean = mean.unsqueeze(1)
+
                     if re.affine:
+                        # Affine 比较麻烦，通常 affine_weight 是 (C,)。
+                        # 如果 output 是多头但对应同一个 feature (Low)，我们应用相同的 affine 参数
                         y_hat = y_hat - re.affine_bias[effective_idx]
                         y_hat = y_hat / (re.affine_weight[effective_idx] + re.eps)
                     
-                    y_hat = y_hat * re.stdev[:, 0, effective_idx]
-                    
-                    if re.subtract_last:
-                        y_hat = y_hat + re.last[:, 0, effective_idx]
-                    else:
-                        y_hat = y_hat + re.mean[:, 0, effective_idx]
-                # [关键修复结束] --------------------------------------------
-                
+                    y_hat = y_hat * stdev
+                    y_hat = y_hat + mean
+    
             return y, y_hat
 
     def training_step(self, batch, batch_idx):
         x = batch['features']
         y = batch[self.y_key]
-        y_old = batch[f'{self.y_key}_old'] # 注意：如果预测 log_return，这里 y_old 是上一日的 log_return
+        y_old = batch[f'{self.y_key}_old']
         if self.batch_size is None:
             self.batch_size = x.shape[0]
-        y_hat = self.forward(x, y_old).reshape(-1)
-        y, y_hat = self.denormalize(y, y_hat)
-        mse = self.mse(y_hat, y)
-        rmse = torch.sqrt(mse)
-        mape = self.mape(y_hat, y)
-        l1 = self.l1(y_hat, y)
-
-        # SmoothL1
-        smooth_l1_loss = self.smooth_l1(y_hat, y)
-
-        # 混合损失：根据 loss_type
-        if self.loss_type == 'hybrid':
-            # 1126: 暂时只使用SmoothL1
-            # loss = self.alpha * smooth_l1_loss + (1 - self.alpha) * focal_loss
-            # loss = smooth_l1_loss + 0.3 * direction_loss 
-            loss = smooth_l1_loss
-        elif self.loss_type == 'rmse':
-            loss = rmse
-        elif self.loss_type == 'mse':
-            loss = mse
-        # ... 其他 elif 如 'mse' 等保持不变
-
-        # [修改点 3]：准确率计算逻辑调整
-        # 如果是预测 Log Return，y 本身的正负就代表涨跌，不需要减去 y_old
-        # y > 0 表示涨，y < 0 表示跌
-        if self.y_key == 'log_return':
-            true_dir = (y > 0).float()
-            pred_dir = (y_hat > 0).float()
+            
+        y_hat = self.forward(x, y_old) # (B, output_dim)
+        
+        # [修改] 损失计算前，保持 normalized 状态计算 Quantile Loss 会更稳定
+        # 但为了指标统一，这里演示 denormalize 后计算 (你可以根据效果调整)
+        y_denorm, y_hat_denorm = self.denormalize(y, y_hat)
+        
+        if self.loss_type == 'quantile':
+            # Quantile Loss
+            loss = self.criterion(y_hat_denorm, y_denorm)
+            # 记录第一个分位数 (通常是 q0.05 或 q0.95) 的误差作为参考
+            mae = self.l1(y_hat_denorm[:, 0], y_denorm) 
+            self.log("train/loss", loss, batch_size=self.batch_size, prog_bar=True)
+            self.log("train/mae_q1", mae, batch_size=self.batch_size, prog_bar=False)
+            
         else:
-            # 旧逻辑：预测价格时，需要看 (Current - Old)
-            diff_pred = y_hat - y_old
-            diff_true = y - y_old
-            true_dir = (diff_true > 0).float()
-            pred_dir = (diff_pred > 0).float()   
-        acc = (true_dir == pred_dir).float().mean()
-
-        # ==========================================
-        # 3. [新增] 价格还原与指标计算 (仅用于监控，不参与反向传播)
-        # ==========================================
-        if self.y_key == 'log_return':
-            # 这里的 Close 和 Close_old 是真实价格（未归一化，或者你需要确认是否被DataTransform归一化了）
-            # 根据你的 dataset.py 实现，batch 里应该有原始的 'Close' 和 'Close_old'
-            # 只要 DataTransform 里 keys 包含 'Close' 即可
+            # 传统的 MSE/RMSE/SmoothL1
+            # y_hat 此时应该是 (B,)
+            y_hat_flat = y_hat_denorm.reshape(-1)
+            loss = self.smooth_l1(y_hat_flat, y_denorm)
             
-            # 注意：DataTransform 输出的 tensor 可能是 float32
-            price_true = batch['Close']       # 今天的真实价格
-            price_old = batch['Close_old']    # 昨天的真实价格
-            
-            # 还原预测价格: P_t = P_{t-1} * exp(r_t)
-            price_pred = price_old * torch.exp(y_hat)
-            
-            # 计算“美元单位”的误差
-            mse = self.mse(price_pred, price_true)
-            rmse = torch.sqrt(mse)
-            mape = self.mape(price_pred, price_true)
-            l1 = self.l1(price_pred, price_true)
-            smooth_l1_loss = self.smooth_l1(price_pred, price_true)
+            # ... (原本的 acc 计算逻辑，仅在单输出模式下有效)
+            if self.y_key == 'log_return':
+                true_dir = (y_denorm > 0).float()
+                pred_dir = (y_hat_flat > 0).float()
+                acc = (true_dir == pred_dir).float().mean()
+                self.log("train/acc", acc, batch_size=self.batch_size, prog_bar=True)
 
-        # 日志记录
-        self.log("train/mse", mse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("train/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        # 注意：预测 Log Return 时，MAPE 可能非常大或不稳定（因为真实值接近0），建议看 MAE/RMSE
-        self.log("train/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("train/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("train/acc", acc, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("train/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
+            self.log("train/rmse", torch.sqrt(self.mse(y_hat_flat, y_denorm)), batch_size=self.batch_size, prog_bar=True)
 
-        return loss  # 返回总损失
+        return loss
 
     def validation_step(self, batch, batch_idx):
         x = batch['features']
         y = batch[self.y_key]
         y_old = batch[f'{self.y_key}_old']
-        if self.batch_size is None:
-            self.batch_size = x.shape[0]
-        y_hat = self.forward(x, y_old).reshape(-1)
-        y, y_hat = self.denormalize(y, y_hat)
-        mse = self.mse(y_hat, y)
-        mse_ret = self.mse(y_hat, y)
-        rmse = torch.sqrt(mse)
-        mape = self.mape(y_hat, y)
-        l1 = self.l1(y_hat, y)
-        smooth_l1_loss = self.smooth_l1(y_hat, y)
+        y_hat = self.forward(x, y_old)
+        y_denorm, y_hat_denorm = self.denormalize(y, y_hat)
 
-        # [修改点 3]：准确率计算逻辑调整 (同上)
-        if self.y_key == 'log_return':
-            true_dir = (y > 0).float()
-            pred_dir = (y_hat > 0).float()
+        if self.loss_type == 'quantile':
+            loss = self.criterion(y_hat_denorm, y_denorm)
+            self.log("val/loss", loss, batch_size=self.batch_size, prog_bar=True)
+            return {"val_loss": loss}
         else:
-            diff_pred = y_hat - y_old
-            diff_true = y - y_old
-            true_dir = (diff_true > 0).float()
-            pred_dir = (diff_pred > 0).float()  
-        acc = (true_dir == pred_dir).float().mean()
-
-        # ==========================================
-        # 3. [新增] 价格还原与指标计算 (仅用于监控，不参与反向传播)
-        # ==========================================
-        if self.y_key == 'log_return':
-            # 这里的 Close 和 Close_old 是真实价格（未归一化，或者你需要确认是否被DataTransform归一化了）
-            # 根据你的 dataset.py 实现，batch 里应该有原始的 'Close' 和 'Close_old'
-            # 只要 DataTransform 里 keys 包含 'Close' 即可
-            
-            # 注意：DataTransform 输出的 tensor 可能是 float32
-            price_true = batch['Close']       # 今天的真实价格
-            price_old = batch['Close_old']    # 昨天的真实价格
-            
-            # 还原预测价格: P_t = P_{t-1} * exp(r_t)
-            price_pred = price_old * torch.exp(y_hat)
-            
-            # 计算“美元单位”的误差
-            mse = self.mse(price_pred, price_true)
-            rmse = torch.sqrt(mse)
-            mape = self.mape(price_pred, price_true)
-            l1 = self.l1(price_pred, price_true)
-            smooth_l1_loss = self.smooth_l1(price_pred, price_true)
-
-        self.log("val/mse", mse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("val/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("val/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("val/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("val/acc", acc, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("val/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
-        
-        return {
-            "val_loss": mse_ret,
-        }
+            y_hat_flat = y_hat_denorm.reshape(-1)
+            rmse = torch.sqrt(self.mse(y_hat_flat, y_denorm))
+            self.log("val/rmse", rmse, batch_size=self.batch_size, prog_bar=True)
+            return {"val_loss": rmse}
     
     def test_step(self, batch, batch_idx):
         x = batch['features']
         y = batch[self.y_key]
         y_old = batch[f'{self.y_key}_old']
-        if self.batch_size is None:
-            self.batch_size = x.shape[0]
-        y_hat = self.forward(x, y_old).reshape(-1)
-        y, y_hat = self.denormalize(y, y_hat)
-        mse = self.mse(y_hat, y)
-        mse_ret = self.mse(y_hat, y)
-        rmse = torch.sqrt(mse)
-        mape = self.mape(y_hat, y)
-        l1 = self.l1(y_hat, y)
+        y_hat = self.forward(x, y_old)
+        y_denorm, y_hat_denorm = self.denormalize(y, y_hat)
 
-        smooth_l1_loss = self.smooth_l1(y_hat, y)  # 新增smooth_l1_loss
-        if self.y_key == 'log_return':
-            true_dir = (y > 0).float()
-            pred_dir = (y_hat > 0).float()
+        if self.loss_type == 'quantile':
+            loss = self.criterion(y_hat_denorm, y_denorm)
+            self.log("test/loss", loss, batch_size=self.batch_size, prog_bar=True)
+            return {"test_loss": loss}
         else:
-            diff_pred = y_hat - y_old
-            diff_true = y - y_old
-            true_dir = (diff_true > 0).float()
-            pred_dir = (diff_pred > 0).float()   
-        acc = (true_dir == pred_dir).float().mean()
+            y_hat_flat = y_hat_denorm.reshape(-1)
+            rmse = torch.sqrt(self.mse(y_hat_flat, y_denorm))
+            self.log("test/rmse", rmse, batch_size=self.batch_size, prog_bar=True)
+            return {"test_loss": rmse}
 
-        # ==========================================
-        # 3. [新增] 价格还原与指标计算 (仅用于监控，不参与反向传播)
-        # ==========================================
-        if self.y_key == 'log_return':
-            # 这里的 Close 和 Close_old 是真实价格（未归一化，或者你需要确认是否被DataTransform归一化了）
-            # 根据你的 dataset.py 实现，batch 里应该有原始的 'Close' 和 'Close_old'
-            # 只要 DataTransform 里 keys 包含 'Close' 即可
-            
-            # 注意：DataTransform 输出的 tensor 可能是 float32
-            price_true = batch['Close']       # 今天的真实价格
-            price_old = batch['Close_old']    # 昨天的真实价格
-            
-            # 还原预测价格: P_t = P_{t-1} * exp(r_t)
-            price_pred = price_old * torch.exp(y_hat)
-            
-            # 计算“美元单位”的误差
-            mse = self.mse(price_pred, price_true)
-            rmse = torch.sqrt(mse)
-            mape = self.mape(price_pred, price_true)
-            l1 = self.l1(price_pred, price_true)
-            smooth_l1_loss = self.smooth_l1(price_pred, price_true)
-
-        self.log("test/mse", mse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("test/rmse", rmse.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("test/mape", mape.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("test/mae", l1.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=False)
-        self.log("test/acc", acc, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-        self.log("test/smooth_l1", smooth_l1_loss.detach(), batch_size=self.batch_size, sync_dist=True, prog_bar=True)  # 新增 smooth_l1_loss log
-        return {
-            "test_loss": mse_ret,
-        }
     
     def configure_optimizers(self):
         # 1. 准备参数分组：分离出不需要 Weight Decay 的参数

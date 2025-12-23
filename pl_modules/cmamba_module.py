@@ -34,6 +34,8 @@ class CryptoMambaModule(BaseModule):
         alpha=0.7,  # 新增 alpha
         feature_names=None,  # [新增]
         skip_revin=None,     # [新增]
+        quantiles=None, # [新增]
+        output_dim=1,   # [新增]
         **kwargs
     ): 
         super().__init__(lr=lr,
@@ -49,6 +51,8 @@ class CryptoMambaModule(BaseModule):
                          alpha=alpha,  # 传给 super
                          max_epochs=max_epochs,  # 传递到 super
                          feature_names=feature_names,
+                         loss_type=kwargs.get('loss_type', 'rmse'), # 确保 loss_type 传递
+                         quantiles=quantiles, # [新增] 传递 quantiles 给 BaseModule 用于 Loss
                          )
         self.model = CMamba(
             num_features=num_features,
@@ -65,5 +69,6 @@ class CryptoMambaModule(BaseModule):
             revin=revin,
             feature_names=feature_names, # [新增] 传递给 CMamba
             skip_revin=skip_revin,       # [新增] 传递给 CMamba
+            output_dim=output_dim, # [新增] 传递 output_dim 给 CMamba 用于 PostProcess
             **kwargs
         )
