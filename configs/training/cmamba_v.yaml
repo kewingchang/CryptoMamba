@@ -4,7 +4,7 @@ model: 'CMamba_v2'
 name: 'CMamba'
 max_epochs: 1000
 use_volume: False
-additional_features: ["log_return", "momentum_stoch"]
+additional_features: ["log_return", "log_return_low", "momentum_stoch"] 
 
 skip_revin: []
 
@@ -12,6 +12,8 @@ hyperparams:
     optimizer: 'adamw'
     lr: 0.0001
     weight_decay: 0.001
-    loss_type: 'rmse'
     alpha: 0.7
-    y_key: 'log_return'
+    y_key: 'log_return_low'  # 预测目标改为 Low
+    loss_type: 'quantile'    # 使用分位数损失
+    quantiles: [0.05, 0.30]  # 定义两个分位数：极限止损(5%)，DCA点(30%)
+    output_dim: 2            # 输出维度必须匹配分位数数量
