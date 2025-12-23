@@ -289,6 +289,7 @@ if __name__ == "__main__":
     print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)}')
 
     trade_mode = None
+    direction = "LONG" if pred_price > today_price else "SHORT"
     
     # 决策逻辑分支
     if x_factor >= X_STRONG_THRESHOLD:
@@ -302,11 +303,6 @@ if __name__ == "__main__":
         print_and_write(txt_file, f'[DECISION]: WAIT / NO TRADE')
         print_and_write(txt_file, f'Reason: Signal too weak (x < {X_WEAK_THRESHOLD})')
 
-    # print long or short
-    print_and_write(txt_file, '-' * 30)
-    direction = "LONG" if pred_price > today_price else "SHORT"
-    print_and_write(txt_file, f'{direction}')
-
     # 执行计算
     if trade_mode:
         orders, stop_loss = calculate_trade_setup(
@@ -317,8 +313,10 @@ if __name__ == "__main__":
             ema7=last_ema_7,
             ema14=last_ema_14
         )
-        
+        # print long or short
         print_and_write(txt_file, '-' * 20)
+        print_and_write(txt_file, f'{direction}')
+        print_and_write(txt_file, '-' * 20) 
         print_and_write(txt_file, f'TAKE PROFIT: {round(pred_price, 2)}')
         print_and_write(txt_file, f'STOP LOSS: {round(stop_loss, 2)}')
         print_and_write(txt_file, f'EXECUTION PLAN ({trade_mode.upper()}):')
