@@ -54,7 +54,7 @@ class DataConverter:
         self.jumps = config.get('jumps')
         self.date_format = config.get('date_format', "%Y-%m-%d")
 
-        # [修改点 1] 无论配置文件怎么写，我们在读取 CSV 时都不去读 log_return
+        # 无论配置文件怎么写，我们在读取 CSV 时都不去读 log_return
         # 因为我们要自己算。从列表中暂时剔除 'log_return'
         all_features = config.get('additional_features', [])
         self.features_to_read = [f for f in all_features if f != 'log_return']
@@ -73,8 +73,6 @@ class DataConverter:
         for key in ['Timestamp', 'High', 'Low', 'Open', 'Close', 'Volume']:
             new_df[key] = []
 
-        # for key in self.additional_features:
-        #     new_df[key] = []
         # 初始化额外特征列 (只初始化我们要从 CSV 读的那些)
         for key in self.features_to_read:
             new_df[key] = []
@@ -95,16 +93,22 @@ class DataConverter:
 
         df = pd.DataFrame(new_df)
 
-        # === 新增：计算 Log Return ===
-        # log_return = ln(Close_t) - ln(Close_t-1)
-        # 加上 1e-8 防止 log(0)
-        # 加上 1e-8 防止 log(0)
-        df[self.target_feature_name] = np.log(df['Close'] + 1e-8) - np.log(df['Close'].shift(1) + 1e-8)
-        # 第一行会变成 NaN (因为没有前一天)，填充为 0
-        df[self.target_feature_name] = df[self.target_feature_name].fillna(0.0)
-        # 处理无穷大值（如果 Close 突然从 0 变别的）
-        df[self.target_feature_name] = df[self.target_feature_name].replace([np.inf, -np.inf], 0.0)
+        # 1. Close Log Return (用于主模型) - ln(Close_t / Close_t-1)
+        df['log_return'] = np.log(df['Close'] + 1e-8) - np.log(df['Close'].shift(1) + 1e-8)
+                
+        # 2. Low Log Return (用于辅助模型 A) - ln(Low_t / Open_t)
+        # 含义：当日最低价相对于开盘价的跌幅
+        df['log_return_low'] = np.log(df['Low'] + 1e-8) - np.log(df['Open'] + 1e-8)
+        
+        # 3. High Log Return (用于辅助模型 B) - ln(High_t / Open_t)
+        # 含义：当日最高价相对于开盘价的涨幅
+        df['log_return_high'] = np.log(df['High'] + 1e-8) - np.log(df['Open'] + 1e-8)
 
+        # 填充 NaN 和 Inf
+        cols_to_fix = ['log_return', 'log_return_low', 'log_return_high']
+        for col in cols_to_fix:
+            df[col] = df[col].fillna(0.0)
+            df[col] = df[col].replace([np.inf, -np.inf], 0.0)
         return df
 
     def get_data(self):
