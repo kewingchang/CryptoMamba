@@ -47,7 +47,6 @@ class CryptoMambaModule(BaseModule):
                          optimizer=optimizer,
                          mode=mode,
                          window_size=window_size,
-                         loss_type=loss_type,
                          alpha=alpha,  # 传给 super
                          max_epochs=max_epochs,  # 传递到 super
                          feature_names=feature_names,
