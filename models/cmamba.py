@@ -396,8 +396,9 @@ class CMamba(nn.Module):
         use_checkpoint=False,
         cls=False,
         revin=False,
-        feature_names: list[str] = None, # [新增]
-        skip_revin: list[str] = None,    # [新增]
+        feature_names: list[str] = None,
+        skip_revin: list[str] = None,
+        output_dim=1,  # [新增] 控制输出维度
         **kwargs
     ):
         super().__init__()
@@ -419,7 +420,7 @@ class CMamba(nn.Module):
         self.act = nn.ReLU
         self.cls = cls
 
-        self.debug_log_count = 0 # disable debug
+        self.debug_log_count = 0 # debug
 
         # self.revin = RevIN(self.num_features, affine=True, subtract_last=False) if revin else None
 
@@ -494,6 +495,11 @@ class CMamba(nn.Module):
         else:
             self.post_process = None
 
+        # [修改] Post Process Layer 始终初始化
+        # 无论是否开启 RevIN，我们都需要一个线性层把 hidden_dim 映射到 output_dim (例如 2个分位数)
+        self.output_dim = output_dim
+        self.post_process = nn.Linear(hidden_dims[-1], output_dim)
+
         self.tanh = nn.Tanh()
 
         d = len(hidden_dims)
@@ -553,15 +559,14 @@ class CMamba(nn.Module):
             # 1. 转置为 (B, L, C) 以适配 RevIN 和 Mamba
             x = x.transpose(1, 2)  # Now: (B, L, C)
 
-            # === [修正] 分离、归一化、重组 ===
-            
+            # === 分离、归一化、重组 ===  
             # 2. 提取特征 (注意：在最后一维 C 上进行索引)
             # x shape is (Batch, Length, Features)
             x_to_norm = x[..., self.norm_indices]  # (B, L, C_norm)
             x_to_skip = x[..., self.skip_indices]  # (B, L, C_skip)
 
 
-            # [新增功能 2] 打印归一化前的统计信息 (仅前 3 个 Batch)
+            # 打印归一化前的统计信息 (仅前 3 个 Batch)
             if self.debug_log_count < 3 and self.norm_feature_names:
                 print(f"\n[RevIN Debug - Batch {self.debug_log_count}] Before Normalization:")
                 # 计算均值和标准差 (跨 Batch 和 Length 维度)
@@ -574,7 +579,7 @@ class CMamba(nn.Module):
             # 3. 进行 RevIN (RevIN 期望 B, L, C)
             x_normed = self.revin(x_to_norm, 'norm')
 
-            # [新增功能 2] 打印归一化后的统计信息
+            # 打印归一化后的统计信息
             if self.debug_log_count < 3 and self.norm_feature_names:
                 print(f"[RevIN Debug - Batch {self.debug_log_count}] After Normalization (Target: Mean~0, Std~1):")
                 means = x_normed.mean(dim=(0, 1))
@@ -599,7 +604,13 @@ class CMamba(nn.Module):
             
             # 输出处理：取最后一个时间步的第0个特征（通常是 Close）
             # x shape: (B, L, C)
-            x = x[:, -1, 0]  # (B,)
+            # x = x[:, -1, 0]  # (B,)
+
+            # [修改] 这里的输出处理逻辑
+            # 原逻辑：直接取 x[:, -1, 0]。这假设了 Channel 0 就是输出，且 output_dim=1。
+            # 新逻辑：取 x[:, -1, :] 得到 hidden vector，然后过 Linear 层得到多头输出。     
+            x = x[:, -1, :] # (B, Hidden_Dim)
+            x = self.post_process(x) # (B, Output_Dim)
             
         else:
             # 无 RevIN 逻辑
@@ -609,8 +620,11 @@ class CMamba(nn.Module):
                 x = layer(x)
             x = x[:, -1, :] # (B, C) -> (32, 5)
             x = self.post_process(x)
+            # x = x.reshape(-1)
+        # [修改] 只有当 output_dim 为 1 时才 reshape(-1)，否则保持 (B, Output_Dim)
+        if self.output_dim == 1:
             x = x.reshape(-1)
-            
+
         if self.cls:
             x = self.tanh(x)
         return x
