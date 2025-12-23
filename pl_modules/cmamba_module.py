@@ -46,11 +46,11 @@ class CryptoMambaModule(BaseModule):
                          y_key=y_key,
                          optimizer=optimizer,
                          mode=mode,
+                         loss_type=loss_type,
                          window_size=window_size,
                          alpha=alpha,  # 传给 super
                          max_epochs=max_epochs,  # 传递到 super
                          feature_names=feature_names,
-                         loss_type=kwargs.get('loss_type', 'rmse'), # 确保 loss_type 传递
                          quantiles=quantiles, # [新增] 传递 quantiles 给 BaseModule 用于 Loss
                          )
         self.model = CMamba(
