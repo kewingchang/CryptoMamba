@@ -194,9 +194,9 @@ if __name__ == "__main__":
         checkpoint_callback = pl.callbacks.ModelCheckpoint(
             save_top_k=1,
             verbose=True,
-            monitor="val/rmse",
+            monitor="val/loss",
             mode="min",
-            filename='epoch{epoch}-val-rmse{val/rmse:.4f}',
+            filename='epoch{epoch}-val_loss{val/loss:.4f}',
             auto_insert_metric_name=False,
             save_last=True
         )
@@ -204,8 +204,8 @@ if __name__ == "__main__":
     
     # 添加早停
     early_stop_callback = EarlyStopping(
-        monitor="val/rmse",
-        min_delta=0.1,
+        monitor="val/loss",
+        min_delta=1e-5,
         patience=150,
         verbose=True,
         mode="min"
