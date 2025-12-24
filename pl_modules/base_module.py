@@ -77,12 +77,15 @@ class BaseModule(pl.LightningModule):
         self.batch_size = None   
         self.mode = mode
         self.window_size = window_size
-        self.loss_type = loss_type  # 改名为 loss_type，以区分混合
+        self.loss_type = loss_type
         self.max_epochs = max_epochs
         self.alpha = alpha  # 新增权重
         self.quantiles = quantiles
 
-        # [新增] 初始化 Loss
+        # only quantile supported
+        assert(self.loss_type == 'quantile')
+
+        # 初始化 Loss
         if self.loss_type == 'quantile':
             assert self.quantiles is not None, "Quantiles must be provided for quantile loss"
             self.criterion = QuantileLoss(self.quantiles)
@@ -104,10 +107,7 @@ class BaseModule(pl.LightningModule):
         self.mse = nn.MSELoss()
         self.l1 = nn.L1Loss()
         self.mape = MAPE()
-        # 新增 BCE 损失（用 WithLogits 以处理原始 logit 输出）
-        # self.focal = nn.BCEWithLogitsLoss()
-        # 新增 Focal 损失
-        # self.focal = FocalLoss(gamma=2.0, alpha=0.5)
+
         self.normalization_coeffs = None
 
     def forward(self, x, y_old=None):
@@ -161,17 +161,6 @@ class BaseModule(pl.LightningModule):
                     effective_idx = target_global_idx
 
                 # 只有当找到了有效索引，且该索引在 RevIN 参数范围内时，才执行反归一化
-                # if effective_idx is not None and effective_idx < re.num_features:
-                #     if re.affine:
-                #         y_hat = y_hat - re.affine_bias[effective_idx]
-                #         y_hat = y_hat / (re.affine_weight[effective_idx] + re.eps)
-                    
-                #     y_hat = y_hat * re.stdev[:, 0, effective_idx]
-                    
-                #     if re.subtract_last:
-                #         y_hat = y_hat + re.last[:, 0, effective_idx]
-                #     else:
-                #         y_hat = y_hat + re.mean[:, 0, effective_idx]
                 if effective_idx is not None and effective_idx < re.num_features:
                     # 获取统计量
                     stdev = re.stdev[:, 0, effective_idx]
@@ -214,22 +203,9 @@ class BaseModule(pl.LightningModule):
             # 记录第一个分位数 (通常是 q0.05 或 q0.95) 的误差作为参考
             mae = self.l1(y_hat_denorm[:, 0], y_denorm) 
             self.log("train/loss", loss, batch_size=self.batch_size, prog_bar=True)
-            self.log("train/mae_q1", mae, batch_size=self.batch_size, prog_bar=False)
-            
+            self.log("train/mae_q1", mae, batch_size=self.batch_size, prog_bar=True)       
         else:
-            # 传统的 MSE/RMSE/SmoothL1
-            # y_hat 此时应该是 (B,)
-            y_hat_flat = y_hat_denorm.reshape(-1)
-            loss = self.smooth_l1(y_hat_flat, y_denorm)
-            
-            # ... (原本的 acc 计算逻辑，仅在单输出模式下有效)
-            if self.y_key == 'log_return':
-                true_dir = (y_denorm > 0).float()
-                pred_dir = (y_hat_flat > 0).float()
-                acc = (true_dir == pred_dir).float().mean()
-                self.log("train/acc", acc, batch_size=self.batch_size, prog_bar=True)
-
-            self.log("train/rmse", torch.sqrt(self.mse(y_hat_flat, y_denorm)), batch_size=self.batch_size, prog_bar=True)
+            raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
 
         return loss
 
@@ -245,10 +221,7 @@ class BaseModule(pl.LightningModule):
             self.log("val/loss", loss, batch_size=self.batch_size, prog_bar=True)
             return {"val_loss": loss}
         else:
-            y_hat_flat = y_hat_denorm.reshape(-1)
-            rmse = torch.sqrt(self.mse(y_hat_flat, y_denorm))
-            self.log("val/rmse", rmse, batch_size=self.batch_size, prog_bar=True)
-            return {"val_loss": rmse}
+            raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
     
     def test_step(self, batch, batch_idx):
         x = batch['features']
@@ -262,10 +235,7 @@ class BaseModule(pl.LightningModule):
             self.log("test/loss", loss, batch_size=self.batch_size, prog_bar=True)
             return {"test_loss": loss}
         else:
-            y_hat_flat = y_hat_denorm.reshape(-1)
-            rmse = torch.sqrt(self.mse(y_hat_flat, y_denorm))
-            self.log("test/rmse", rmse, batch_size=self.batch_size, prog_bar=True)
-            return {"test_loss": rmse}
+            raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
 
     
     def configure_optimizers(self):
