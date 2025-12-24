@@ -54,7 +54,7 @@ for col in required_cols:
 
 # --- 特征工程开始 ---
 
-# 4.1 添加 TA 库的 momentum_stoch 特征
+# 添加 TA 库的 momentum_stoch 特征
 # Stochastic Oscillator (随机指标)
 # 公式: 100 * (Close - Lowest Low) / (Highest High - Lowest Low)
 # 默认窗口 window=14, smooth_window=3
@@ -70,7 +70,20 @@ try:
 except Exception as e:
     print(f"Error calculating momentum_stoch: {e}")
 
-# 4.2 添加 TA 库的 ATR_14 特征
+# 添加 TA 库的 stoch_rsi_indicator 特征
+try:
+    # 直接计算 StochRSI K
+    df['momentum_stoch_rsi'] = ta.momentum.stochrsi(
+        close=df['Close'], 
+        window=14, 
+        smooth1=3, 
+        smooth2=3
+    )
+    print("Feature 'momentum_stoch_rsi' added.")
+except Exception as e:
+    print(f"Error calculating momentum_stoch_rsi: {e}")
+
+# 添加 TA 库的 ATR_14 特征
 # Average True Range (平均真实波幅)
 # 用于衡量波动率，window=14
 try:
@@ -84,7 +97,7 @@ try:
 except Exception as e:
     print(f"Error calculating ATR_14: {e}")
 
-# 4.3 【新增】添加 EMA 7 和 EMA 14
+# 添加 EMA 7 和 EMA 14
 # Exponential Moving Average (指数移动平均线)
 try:
     df['EMA_7'] = ta.trend.ema_indicator(
@@ -99,7 +112,7 @@ try:
 except Exception as e:
     print(f"Error calculating EMA: {e}")
 
-# 4.4 Next day of year (Cyclical Time Features)
+# Next day of year (Cyclical Time Features)
 # 【逻辑修复】: 直接使用 df.index 计算，确保与 DataFrame 行对齐
 try:
     # 获取索引中的日期并加1天
