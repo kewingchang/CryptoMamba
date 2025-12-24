@@ -20,10 +20,10 @@ if args.filename:
 else:
     filename = f"{args.ticker}.csv"
 
-# 1. Fetch Data from Yahoo Finance (Last 40 days to ensure enough buffer for TA windows)
-print(f"Fetching last 40 days of data for {args.ticker}...")
+# 1. Fetch Data from Yahoo Finance (Last 60 days to ensure enough buffer for TA windows)
+print(f"Fetching last 60 days of data for {args.ticker}...")
 ticker_obj = yf.Ticker(args.ticker)
-df = ticker_obj.history(period="40d")
+df = ticker_obj.history(period="60d")
 
 if df.empty:
     raise ValueError(f"No data found for ticker {args.ticker}")
