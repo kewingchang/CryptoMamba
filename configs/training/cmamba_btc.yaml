@@ -4,7 +4,7 @@ model: 'CMamba_v2'
 name: 'CMamba'
 max_epochs: 1000
 use_volume: False
-additional_features: ["log_return", "next_yr_angle"]
+additional_features: ["log_return", "momentum_stoch_rsi"]
 
 skip_revin: []
 
