@@ -202,8 +202,8 @@ class BaseModule(pl.LightningModule):
             loss = self.criterion(y_hat_denorm, y_denorm)
             # 记录第一个分位数 (通常是 q0.05 或 q0.95) 的误差作为参考
             mae = self.l1(y_hat_denorm[:, 0], y_denorm) 
-            self.log("train/loss", loss, batch_size=self.batch_size, prog_bar=True)
-            self.log("train/mae_q1", mae, batch_size=self.batch_size, prog_bar=True)       
+            self.log("train/loss", loss, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+            self.log("train/mae_q1", mae, batch_size=self.batch_size, sync_dist=True, prog_bar=True)       
         else:
             raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
 
@@ -218,7 +218,7 @@ class BaseModule(pl.LightningModule):
 
         if self.loss_type == 'quantile':
             loss = self.criterion(y_hat_denorm, y_denorm)
-            self.log("val/loss", loss, batch_size=self.batch_size, prog_bar=True)
+            self.log("val/loss", loss, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
             return {"val_loss": loss}
         else:
             raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
@@ -232,7 +232,7 @@ class BaseModule(pl.LightningModule):
 
         if self.loss_type == 'quantile':
             loss = self.criterion(y_hat_denorm, y_denorm)
-            self.log("test/loss", loss, batch_size=self.batch_size, prog_bar=True)
+            self.log("test/loss", loss, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
             return {"test_loss": loss}
         else:
             raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
