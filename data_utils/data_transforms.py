@@ -6,9 +6,9 @@ class DataTransform:
     def __init__(self, is_train, use_volume=False, additional_features=[], mixup_alpha=0.5, mixup_prob=0.3):
         self.is_train = is_train
         
-        # [修改点 1]: 从特征列表中移除 'Close'
+        # 从特征列表中移除 'Close'
         # 现在的特征: ['Open', 'High', 'Low', 'Volume'?, 'log_return'...]
-        self.keys = ['Open', 'High', 'Low'] 
+        self.keys = ['Open', 'High', 'Close']
                 
         if use_volume:
             self.keys.append('Volume')

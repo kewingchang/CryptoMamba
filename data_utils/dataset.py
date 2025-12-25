@@ -58,7 +58,7 @@ class DataConverter:
         # 因为我们要自己算。从列表中暂时剔除 'log_return'
         all_features = config.get('additional_features', [])
         self.features_to_read = [f for f in all_features if f != 'log_return']
-        self.target_feature_name = 'log_return' # 我们统一生成的小写名称
+        # self.target_feature_name = 'log_return'
 
         self.end_date = config.get('end_date')
         self.data_path = config.get('data_path')
