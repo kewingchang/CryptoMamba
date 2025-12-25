@@ -200,10 +200,21 @@ class BaseModule(pl.LightningModule):
         if self.loss_type == 'quantile':
             # Quantile Loss
             loss = self.criterion(y_hat_denorm, y_denorm)
-            # 记录第一个分位数 (通常是 q0.05 或 q0.95) 的误差作为参考
-            mae = self.l1(y_hat_denorm[:, 0], y_denorm) 
             self.log("train/loss", loss, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
-            self.log("train/mae_q1", mae, batch_size=self.batch_size, sync_dist=True, prog_bar=True)       
+            # 核心评价指标
+            target = y_denorm.view(-1, 1)
+            for i, q in enumerate(self.quantiles):
+                # 1. 计算覆盖率 (Coverage Rate)
+                # 统计有多少比例的真实值小于预测值
+                # 对于 q=0.05，我们期望这个比例接近 0.05
+                coverage = (target < y_hat_denorm[:, i:i+1]).float().mean()
+                
+                # 2. 计算 MAE (作为参考)
+                mae = self.l1(y_hat_denorm[:, i], y_denorm)
+                
+                # Log 出来，格式例如: val/q0.05_cover, val/q0.05_mae
+                self.log(f"train/q{q}_cover", coverage, batch_size=self.batch_size, sync_dist=True, prog_bar=False)
+                self.log(f"train/q{q}_mae", mae, batch_size=self.batch_size, sync_dist=True, prog_bar=False)
         else:
             raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
 
@@ -219,10 +230,29 @@ class BaseModule(pl.LightningModule):
         if self.loss_type == 'quantile':
             loss = self.criterion(y_hat_denorm, y_denorm)
             self.log("val/loss", loss, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+            
+            # 核心评价指标
+            # y_denorm: (B,)  y_hat_denorm: (B, num_quantiles)
+            # 确保 y_denorm 是 (B, 1) 以便广播对比
+            target = y_denorm.view(-1, 1)
+            
+            for i, q in enumerate(self.quantiles):
+                # 1. 计算覆盖率 (Coverage Rate)
+                # 统计有多少比例的真实值小于预测值
+                # 对于 q=0.05，我们期望这个比例接近 0.05
+                coverage = (target < y_hat_denorm[:, i:i+1]).float().mean()
+                
+                # 2. 计算 MAE (作为参考)
+                mae = self.l1(y_hat_denorm[:, i], y_denorm)
+                
+                # Log 出来，格式例如: val/q0.05_cover, val/q0.05_mae
+                self.log(f"val/q{q}_cover", coverage, batch_size=self.batch_size, sync_dist=True, prog_bar=False)
+                self.log(f"val/q{q}_mae", mae, batch_size=self.batch_size, sync_dist=True, prog_bar=False)
+
             return {"val_loss": loss}
         else:
             raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
-    
+
     def test_step(self, batch, batch_idx):
         x = batch['features']
         y = batch[self.y_key]
@@ -233,10 +263,19 @@ class BaseModule(pl.LightningModule):
         if self.loss_type == 'quantile':
             loss = self.criterion(y_hat_denorm, y_denorm)
             self.log("test/loss", loss, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+            
+            # === [新增] 同上 ===
+            target = y_denorm.view(-1, 1)
+            for i, q in enumerate(self.quantiles):
+                coverage = (target < y_hat_denorm[:, i:i+1]).float().mean()
+                mae = self.l1(y_hat_denorm[:, i], y_denorm)
+                
+                self.log(f"test/q{q}_cover", coverage, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+                self.log(f"test/q{q}_mae", mae, batch_size=self.batch_size, sync_dist=True, prog_bar=True)
+            
             return {"test_loss": loss}
         else:
             raise ValueError(f"Unsupported loss_type: {self.loss_type!r}. Only 'quantile' supported.")
-
     
     def configure_optimizers(self):
         # 1. 准备参数分组：分离出不需要 Weight Decay 的参数
