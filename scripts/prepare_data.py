@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description='Add additional features to CSV fil
 parser.add_argument('--ticker', type=str, required=True, help='Yahoo Finance Ticker (e.g., BTC-USD)')
 parser.add_argument('--filename', type=str, required=False, help='The CSV file name to save (optional)')
 # 【新增】增加 Dune API Key 参数
-parser.add_argument('--dune_api', type=str, required=False, default="xxxx", help='Dune Analytics API Key')
+parser.add_argument('--dune_api', type=str, required=False, default=None, help='Dune Analytics API Key')
 
 args = parser.parse_args()
 
