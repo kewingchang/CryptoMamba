@@ -172,6 +172,17 @@ try:
 except Exception as e:
     print(f"Error calculating EMA: {e}")
 
+# 添加 DPO (Detrended Price Oscillator)
+# 去趋势价格震荡指标，通常 window=20
+try:
+    df['trend_dpo'] = ta.trend.dpo(
+        close=df['Close'],
+        window=20
+    )
+    print("Feature 'trend_dpo' added.")
+except Exception as e:
+    print(f"Error calculating trend_dpo: {e}")
+
 # Next day of year (Cyclical Time Features)
 # 【逻辑修复】: 直接使用 df.index 计算，确保与 DataFrame 行对齐
 try:
