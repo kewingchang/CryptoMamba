@@ -7,11 +7,16 @@ import requests
 import yfinance as yf
 import os
 import ta
+# 【新增】引入 Dune Client
+from dune_client.client import DuneClient
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Add additional features to CSV file.')
 parser.add_argument('--ticker', type=str, required=True, help='Yahoo Finance Ticker (e.g., BTC-USD)')
 parser.add_argument('--filename', type=str, required=False, help='The CSV file name to save (optional)')
+# 【新增】增加 Dune API Key 参数
+parser.add_argument('--dune_api', type=str, required=False, default="xxxx", help='Dune Analytics API Key')
+
 args = parser.parse_args()
 
 # Determine filename
@@ -51,6 +56,61 @@ required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
 for col in required_cols:
     if col not in df.columns:
         raise ValueError(f"Missing required column: {col}")
+
+# --- 【新增】Dune Analytics 数据获取开始 ---
+if args.dune_api:
+    print("Fetching Gas Used data from Dune Analytics (Query 741)...")
+    try:
+        dune = DuneClient(args.dune_api)
+        # 获取 Query 741 的最新结果
+        query_result = dune.get_latest_result(741)
+        
+        # 将结果转换为 DataFrame
+        dune_data = query_result.result.rows
+        dune_df = pd.DataFrame(dune_data)
+        
+        # Dune 返回的列名通常是小写的，但为了保险起见进行标准化
+        dune_df.columns = [c.lower() for c in dune_df.columns]
+        
+        # 查找日期列
+        date_col = 'time'
+        if date_col and 'gas_used' in dune_df.columns:
+            # 处理日期格式并去除时区，以便与 Yahoo Finance 数据对齐
+            dune_df['Date'] = pd.to_datetime(dune_df[date_col]).dt.tz_localize(None)
+            
+            # 确保 gas_used 是数值类型
+            dune_df['gas_used'] = pd.to_numeric(dune_df['gas_used'], errors='coerce')
+            
+            # 设置索引以便合并
+            dune_df = dune_df.set_index('Date')
+            
+            # 只保留 gas_used 列
+            dune_subset = dune_df[['gas_used']]
+            
+            # 【关键】合并数据 (Left Join)
+            # 以 Yahoo Finance 的日期为准。
+            # 因为 df 只有过去60天，merge 后 dune 的数据也会自动限制在过去60天。
+            original_cols = len(df.columns)
+            df = df.join(dune_subset, how='left')
+            
+            print(f"Dune 'gas_used' merged. Added {len(df.columns) - original_cols} column(s).")
+            
+            # 简单的缺失值填充策略：如果当天没数据，用前一天的数据填充 (Forward Fill)
+            # 链上数据偶尔会有几小时延迟，ffill 能防止 dropna 删除掉最新的那一行
+            if 'gas_used' in df.columns:
+                df['gas_used'] = df['gas_used'].ffill()
+
+        else:
+            print(f"Warning: Expected columns ('day'/'date' and 'gas_used') not found in Dune response. Keys found: {dune_df.columns}")
+
+    except Exception as e:
+        print(f"Error fetching/merging Dune data: {e}")
+        # 如果获取失败，代码继续运行，不中断，只是缺少该特征
+else:
+    print("Skipping Dune data (API Key is missing or default).")
+
+# --- Dune Analytics 数据获取结束 ---
+
 
 # --- 特征工程开始 ---
 
