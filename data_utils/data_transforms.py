@@ -8,7 +8,8 @@ class DataTransform:
         
         # 从特征列表中移除 'Close'
         # 现在的特征: ['Open', 'High', 'Low', 'Volume'?, 'log_return'...]
-        self.keys = ['Open', 'High', 'Close']
+        # self.keys = ['Open', 'High', 'Close']
+        self.keys = []
                 
         if use_volume:
             self.keys.append('Volume')

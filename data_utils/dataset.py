@@ -57,8 +57,10 @@ class DataConverter:
         # 无论配置文件怎么写，我们在读取 CSV 时都不去读 log_return
         # 因为我们要自己算。从列表中暂时剔除 'log_return'
         all_features = config.get('additional_features', [])
-        self.features_to_read = [f for f in all_features if f != 'log_return']
-        # self.target_feature_name = 'log_return'
+        # 定义标准字段集合（这些字段在 process_data 中有专门的逻辑处理）
+        reserved_keys = {'Open', 'High', 'Low', 'Close', 'Volume', 'Timestamp', 'log_return'}
+        # 只保留那些 不在 标准字段里的特征（例如 log_return_low, log_return_high 等）
+        self.features_to_read = [f for f in all_features if f not in reserved_keys]
 
         self.end_date = config.get('end_date')
         self.data_path = config.get('data_path')
