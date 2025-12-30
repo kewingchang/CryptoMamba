@@ -7,14 +7,15 @@ import requests
 import yfinance as yf
 import os
 import ta
-# 【新增】引入 Dune Client
+# 引入 Dune Client
 from dune_client.client import DuneClient
+from dune_client.query import QueryBase
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Add additional features to CSV file.')
 parser.add_argument('--ticker', type=str, required=True, help='Yahoo Finance Ticker (e.g., BTC-USD)')
 parser.add_argument('--filename', type=str, required=False, help='The CSV file name to save (optional)')
-# 【新增】增加 Dune API Key 参数
+# 增加 Dune API Key 参数
 parser.add_argument('--dune_api', type=str, required=False, default=None, help='Dune Analytics API Key')
 
 args = parser.parse_args()
@@ -62,8 +63,15 @@ if args.dune_api:
     print("Fetching Gas Used data from Dune Analytics (Query 741)...")
     try:
         dune = DuneClient(args.dune_api)
-        # 获取 Query 741 的最新结果
-        query_result = dune.get_latest_result(741)
+        
+        # 构建 Query 对象
+        # name 只是本地标识，query_id 必须是 741
+        query = QueryBase(name="Ethereum Gas Data", query_id=741)
+        
+        # 使用 run_query() 替代 refresh()
+        # 这会强制触发 Dune 重新运行查询并等待结果
+        print("Triggering new execution on Dune (this may take a moment)...")
+        query_result = dune.run_query(query)
         
         # 将结果转换为 DataFrame
         dune_data = query_result.result.rows
@@ -101,7 +109,7 @@ if args.dune_api:
                 df['gas_used'] = df['gas_used'].ffill()
 
         else:
-            print(f"Warning: Expected columns ('day'/'date' and 'gas_used') not found in Dune response. Keys found: {dune_df.columns}")
+            print(f"Warning: Expected columns ('time' and 'gas_used') not found in Dune response. Keys found: {dune_df.columns}")
 
     except Exception as e:
         print(f"Error fetching/merging Dune data: {e}")
@@ -207,7 +215,7 @@ except Exception as e:
 df = df.reset_index()
 
 # 5. Clean Data: Remove empty rows
-# (Rolling window of 14 creates NaNs at the start)
+# (Rolling window of 14 or 20 creates NaNs at the start)
 original_len = len(df)
 df = df.dropna()
 print(f"Removed {original_len - len(df)} rows containing NaN values.")
