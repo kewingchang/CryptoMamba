@@ -126,7 +126,7 @@ if __name__ == "__main__":
     # 这里必须与训练时的特征顺序完全一致
     # 模型 3: Open, High, Close, log_return_low
     # 获取 feature_names
-    feature_names = ['Open', 'High', 'Close']
+    feature_names = []
     if use_volume:
         feature_names.append('Volume')
     # additional_features 里包含了 'log_return_low'
