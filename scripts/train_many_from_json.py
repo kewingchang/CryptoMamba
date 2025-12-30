@@ -96,7 +96,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    fixed_features = ['Open', 'High', 'Close']
+    fixed_features = []
     num_fixed_features = len(fixed_features)
 
     # 加载数据
