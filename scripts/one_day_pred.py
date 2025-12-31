@@ -151,6 +151,11 @@ if __name__ == "__main__":
     if 'log_return_low' in feature_names:
         data['log_return_low'] = np.log(data['Low'] + 1e-8) - np.log(data['Open'] + 1e-8)
 
+    # 新增处理 log_return_high (适配 High 模型)
+    if 'log_return_high' in feature_names:
+        # ln(High / Open)
+        data['log_return_high'] = np.log(data['High'] + 1e-8) - np.log(data['Open'] + 1e-8)
+
     # 填充 NaN
     data = data.fillna(0.0).replace([np.inf, -np.inf], 0.0)
     
@@ -219,17 +224,17 @@ if __name__ == "__main__":
     print_and_write(txt_file, f'Prediction date: {pred_date}')
     print_and_write(txt_file, f'Ref Price (Last Close): {round(last_close_price, 2)}')
     print_and_write(txt_file, '-'*30)
-    
-    # 遍历每个分位数并还原价格
+
     for i, q in enumerate(quantiles):
-        # 还原公式：Price = Open * exp(log_return_low)
-        # 这里假设 明日Open ≈ 今日Close
+        # 这里的还原公式是通用的，但变量名在 High 模型下也是 log_return_high
+        # Price = Open * exp(predicted_log_return)
         price_level = last_close_price * np.exp(pred_vals[i])
         
-        # 如果是 StopLoss (通常是最小的分位数)
+        # 动态调整 Label 显示
         label = f"q={q}"
-        if q == 0.05: label += " (StopLoss)"
-        elif q == 0.60: label += " (DCA-1)"
+        if q == 0.05: label += " (Low Stop)"
+        elif q == 0.95: label += " (High Stop)" # 新增 High 模型标识
+        elif q == 0.60: label += " (Buy 1/Sell 3)" # 简单示意
             
         print_and_write(txt_file, f'{label:<15}: {round(price_level, 2)} (Return: {pred_vals[i]*100:.2f}%)')
 
