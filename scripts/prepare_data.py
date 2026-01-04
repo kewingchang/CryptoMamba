@@ -26,10 +26,10 @@ if args.filename:
 else:
     filename = f"{args.ticker}.csv"
 
-# 1. Fetch Data from Yahoo Finance (Last 60 days to ensure enough buffer for TA windows)
-print(f"Fetching last 60 days of data for {args.ticker}...")
+# 1. Fetch Data from Yahoo Finance (Last 1 year to ensure enough buffer for TA windows)
+print(f"Fetching last 1 year of data for {args.ticker}...")
 ticker_obj = yf.Ticker(args.ticker)
-df = ticker_obj.history(period="60d")
+df = ticker_obj.history(period="1y")
 
 if df.empty:
     raise ValueError(f"No data found for ticker {args.ticker}")
@@ -58,7 +58,7 @@ for col in required_cols:
     if col not in df.columns:
         raise ValueError(f"Missing required column: {col}")
 
-# --- 【新增】Dune Analytics 数据获取开始 ---
+# --- Dune Analytics 数据获取开始 ---
 if args.dune_api:
     print("Fetching Gas Used data from Dune Analytics (Query 741)...")
     try:
@@ -95,7 +95,7 @@ if args.dune_api:
             # 只保留 gas_used 列
             dune_subset = dune_df[['gas_used']]
             
-            # 【关键】合并数据 (Left Join)
+            # 合并数据 (Left Join)
             # 以 Yahoo Finance 的日期为准。
             # 因为 df 只有过去60天，merge 后 dune 的数据也会自动限制在过去60天。
             original_cols = len(df.columns)
@@ -191,23 +191,35 @@ try:
 except Exception as e:
     print(f"Error calculating trend_dpo: {e}")
 
-# Next day of year (Cyclical Time Features)
-# 【逻辑修复】: 直接使用 df.index 计算，确保与 DataFrame 行对齐
+# 【新增】添加 TA 库 volatility_bbli
+# Bollinger Bands Lower Indicator (如果 Close < Lower Band 则为 1，否则为 0)
+# 默认: window=20, window_dev=2
+try:
+    df['volatility_bbli'] = ta.volatility.bollinger_lband_indicator(
+        close=df['Close'],
+        window=20,
+        window_dev=2
+    )
+    print("Feature 'volatility_bbli' added.")
+except Exception as e:
+    # 修复了这里的错误提示，之前是 trend_dpo
+    print(f"Error calculating volatility_bbli: {e}")
+
+# 时间特征
+# 直接使用 df.index 计算，确保与 DataFrame 行对齐
 try:
     # 获取索引中的日期并加1天
     next_dates = df.index + pd.Timedelta(days=1)
-    # 计算 day of year
-    next_day_of_year = next_dates.dayofyear    
-    # 计算 cyclical features (Sin/Cos)
-    # 使用 365.25 来考虑闰年平均值
-    next_day_sin = np.sin(2 * np.pi * next_day_of_year / 365.25)
-    next_day_cos = np.cos(2 * np.pi * next_day_of_year / 365.25)
-    
-    # 计算角度 (Arctan2)
-    df['next_yr_angle'] = np.arctan2(next_day_sin, next_day_cos)
-    print("Feature 'next_yr_angle' added.")
+
+    df['next_weekday'] = next_dates.weekday
+    df['next_is_weekend'] = df['next_weekday'].isin([5, 6]).astype(int)
+
+    weekday = df.index.weekday
+    df['wd_angle'] = np.arctan2(np.sin(2 * np.pi * weekday / 7), np.cos(2 * np.pi * weekday / 7))
+
+    print("Time features added.")
 except Exception as e:
-    print(f"Error calculating date features: {e}")
+    print(f"Error calculating time features: {e}")
 
 # --- 特征工程结束 ---
 
