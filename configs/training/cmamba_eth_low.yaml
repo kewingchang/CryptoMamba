@@ -1,0 +1,25 @@
+additional_features:
+- Open
+- High
+- Close
+- log_return_low
+- next_is_weekend
+data_config: mode_1
+hyperparams:
+  alpha: 0.7
+  loss_type: quantile
+  lr: 0.0001
+  optimizer: adamw
+  output_dim: 4
+  quantiles:
+  - 0.05
+  - 0.2
+  - 0.4
+  - 0.6
+  weight_decay: 0.001
+  y_key: log_return_low
+max_epochs: 1000
+model: CMamba_v2
+name: CMamba
+skip_revin: []
+use_volume: false

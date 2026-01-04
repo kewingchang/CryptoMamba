@@ -1,0 +1,26 @@
+additional_features:
+- Open
+- High
+- Low
+- Close
+- log_return_high
+- volatility_bbli
+data_config: mode_1
+hyperparams:
+  alpha: 0.7
+  loss_type: quantile
+  lr: 0.0001
+  optimizer: adamw
+  output_dim: 4
+  quantiles:
+  - 0.95
+  - 0.8
+  - 0.6
+  - 0.4
+  weight_decay: 0.001
+  y_key: log_return_high
+max_epochs: 1000
+model: CMamba_v2
+name: CMamba
+skip_revin: []
+use_volume: false
