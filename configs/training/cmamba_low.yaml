@@ -1,0 +1,25 @@
+data_config: 'mode_1'
+model: 'CMamba_v2'
+
+name: 'CMamba'
+max_epochs: 1000
+use_volume: False
+additional_features: ["Open", "High", "Close", "log_return_low"]
+
+skip_revin: []
+
+# [修改] 定义你的金字塔加仓点位 + 极限止损位
+# 注意：分位数定义的是“跌破该位置的概率”
+# 0.05 = 只有 5% 概率跌破 (深坑，止损用)
+# 0.20 = 只有 20% 概率跌破 - DCA3 (+30%)
+# 0.40 = 只有 40% 概率跌破 - DCA2 (+40%)
+# 0.60 = 只有 60% 概率跌破 - DCA1 (+30%)
+hyperparams:
+    optimizer: 'adamw'
+    lr: 0.0001
+    weight_decay: 0.001
+    alpha: 0.7
+    y_key: 'log_return_low'
+    loss_type: 'quantile'
+    quantiles: [0.05, 0.20, 0.40, 0.60]
+    output_dim: 4
