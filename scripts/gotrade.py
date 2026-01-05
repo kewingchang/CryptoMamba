@@ -70,8 +70,13 @@ def get_args():
     )
     parser.add_argument(
         "--risk",
-        default=2, # 建议设为你的 MAPE (例如 2.2)
+        default=2,
         type=float,
+    )
+    parser.add_argument(
+        '--paper_trading', 
+        default=False,   
+        action='store_true',          
     )
 
     args = parser.parse_args()
@@ -250,7 +255,6 @@ if __name__ == "__main__":
              pred_log_return = float(pred_raw.item())
 
     # 6. 价格还原
-    # Prediction = Last_Close * exp(Predicted_Log_Return)
     pred_price = last_close_price * np.exp(pred_log_return)
     # "Today value" 在这里的语境下，通常指最近已知的价格 (last_close_price)
     today_price = last_close_price
@@ -264,8 +268,8 @@ if __name__ == "__main__":
     pct_change = (pred_price - today_price) / today_price * 100
     print_and_write(txt_file, f'Predicted Change: {round(pct_change, 2)}%')
     # pred_log_return
-    print_and_write(txt_file, f'Predicted log_return: {round(pred_log_return, 5)}%')
-    print_and_write(txt_file, f'Current ATR_14: {round(last_atr, 2)}')
+    # print_and_write(txt_file, f'Predicted log_return: {round(pred_log_return, 5)}%')
+    # print_and_write(txt_file, f'Current ATR_14: {round(last_atr, 2)}')
 
     # 7. 实战交易逻辑 (Real-World Trading Logic)
     print_and_write(txt_file, '-' * 30)
@@ -285,7 +289,7 @@ if __name__ == "__main__":
     X_STRONG_THRESHOLD = 0.5
     X_WEAK_THRESHOLD = 0.2
 
-    print_and_write(txt_file, f'Risk Config (MAPE): {args.risk}%')
+    # print_and_write(txt_file, f'Risk Config (MAPE): {args.risk}%')
     print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)}')
 
     trade_mode = None
@@ -298,13 +302,13 @@ if __name__ == "__main__":
     elif x_factor >= X_WEAK_THRESHOLD:
         trade_mode = 'conservative'
         print_and_write(txt_file, f'[DECISION]: OPEN {direction} (WEAK SIGNAL - SNIPER MODE)')
-        print_and_write(txt_file, f'Reason: Low expected return. Using limit orders only to catch wicks.')
+        # print_and_write(txt_file, f'Reason: Low expected return. Using limit orders only to catch wicks.')
     else:
         print_and_write(txt_file, f'[DECISION]: WAIT / NO TRADE')
-        print_and_write(txt_file, f'Reason: Signal too weak (x < {X_WEAK_THRESHOLD})')
+        # print_and_write(txt_file, f'Reason: Signal too weak (x < {X_WEAK_THRESHOLD})')
 
     # 执行计算
-    if trade_mode:
+    if trade_mode and not args.paper_trading:
         orders, stop_loss = calculate_trade_setup(
             today_price,
             direction,
@@ -331,3 +335,7 @@ if __name__ == "__main__":
                 price_str = f"{round(order['price'], 2)}"
                 
             print_and_write(txt_file, f"  Order #{idx+1}: {o_type} | Size: {size}% | Price: {price_str}")
+    else:
+        print_and_write(txt_file, '-' * 20)
+        print_and_write(txt_file, f'{direction}')
+        print_and_write(txt_file, '-' * 20)
