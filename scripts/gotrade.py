@@ -95,11 +95,8 @@ def init_dirs(args, date):
     txt_file = open(f'{path}/{date}.txt', 'w')
     return txt_file
 
-def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
-    # arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
-    # model_arch = config.get('model')
-    # model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
-    model_config_path = f'{ROOT}/configs/models/CryptoMamba/{config}.yaml'
+def load_model(config, model_path, ckpt_path, feature_names=None, skip_revin=None):
+    model_config_path = f'{ROOT}/configs/models/CryptoMamba/{model_path}.yaml'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     
     # 注入训练配置中的超参数
@@ -145,8 +142,7 @@ if __name__ == "__main__":
 
     # 2. 加载模型
     model_path = args.model
-    # model = load_model(config, args.ckpt_path, feature_names, skip_revin_list)
-    model = load_model(model_path, args.ckpt_path, feature_names, skip_revin_list)
+    model = load_model(config, model_path, args.ckpt_path, feature_names, skip_revin_list)
 
     # 3. 加载并处理数据
     data = pd.read_csv(args.data_path)
@@ -189,8 +185,7 @@ if __name__ == "__main__":
     # 注意：log_return_low 是相对于 Open 的，所以我们需要明天的 Open
     # 但明天的 Open 我们不知道，通常假设 明日Open = 今日Close (或者如果你的实盘策略是明日开盘即入场)
     last_close_price = float(input_df.iloc[-1]['Close'])
-    # last_open_price = float(input_df.iloc[-1]['Open']) # 如果你需要相对于今日Open
-    
+        
     txt_file = init_dirs(args, pred_date)
 
     # 4. 构建 Input Tensor
