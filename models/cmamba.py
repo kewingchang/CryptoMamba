@@ -420,7 +420,7 @@ class CMamba(nn.Module):
         self.act = nn.ReLU
         self.cls = cls
 
-        self.debug_log_count = 0 # debug
+        self.debug_log_count = 3 # debug
 
         # self.revin = RevIN(self.num_features, affine=True, subtract_last=False) if revin else None
 
