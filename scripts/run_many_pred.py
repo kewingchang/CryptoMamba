@@ -186,8 +186,19 @@ def update_csv_file(args, data_map):
         # 标准化日期格式
         df['Date_dt'] = pd.to_datetime(df['Date'])
         
-        # 初始化新列（如果不存在）
-        new_cols = ['pred', 'pred_chg', 'direction', 'strength']
+        # ---------------------------------------------------------
+        # 修改需求 2: 计算 change% = (Close - Open) / Open * 100
+        # ---------------------------------------------------------
+        if 'Open' in df.columns and 'Close' in df.columns:
+            # 批量计算全量数据的 change%，保留4位小数（可选）
+            df['change%'] = (df['Close'] - df['Open']) / df['Open'] * 100
+        else:
+            print("[!] 'Open' or 'Close' column missing, cannot calculate 'change%'")
+
+        # ---------------------------------------------------------
+        # 修改需求 1: 列名调整 pred_chg -> pred_chg%
+        # ---------------------------------------------------------
+        new_cols = ['pred', 'pred_chg%', 'direction', 'strength']
         for col in new_cols:
             if col not in df.columns:
                 df[col] = None
@@ -203,7 +214,8 @@ def update_csv_file(args, data_map):
             if mask.any():
                 idx = df.index[mask]
                 df.loc[idx, 'pred'] = info['pred']
-                df.loc[idx, 'pred_chg'] = info['pred_chg']
+                # 这里将解析出来的数值写入带 % 的新列名
+                df.loc[idx, 'pred_chg%'] = info['pred_chg'] 
                 df.loc[idx, 'direction'] = info['direction']
                 df.loc[idx, 'strength'] = info['strength']
                 count += 1
