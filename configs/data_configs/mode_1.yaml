@@ -3,7 +3,7 @@ start_date: "2018-09-17"
 end_date: "2024-09-16"
 root: "./data"
 date_format: "%Y-%m-%d"
-data_path: "./data/BTC_Dataset_daily.csv"
+data_path: "./data/ETH_Dataset_daily.csv"
 train_interval: ["2018-09-17", "2022-09-17"]
 val_interval: ["2022-09-17", "2023-09-17"]
 test_interval: ["2023-09-17", "2024-09-17"]
