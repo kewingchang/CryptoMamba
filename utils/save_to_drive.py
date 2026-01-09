@@ -6,7 +6,7 @@ from datetime import datetime
 if __name__ == "__main__":
 	# 生成时间戳
 	dir_time = datetime.now().strftime('%Y%m%d')
-	time_stamp = datetime.now().strftime('%Y%m%d_%H%M')
+	time_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 	target_dir = f'/content/drive/MyDrive/training/{dir_time}/{time_stamp}'
 
 	# 创建目录
