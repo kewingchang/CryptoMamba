@@ -9,7 +9,6 @@ from pathlib import Path
 from utils import io_tools
 from datetime import datetime
 from utils.io_tools import load_config_from_yaml
-import numpy as np
 
     
 class CMambaDataset(torch.utils.data.Dataset):
@@ -53,13 +52,7 @@ class DataConverter:
         self.root = config.get('root')
         self.jumps = config.get('jumps')
         self.date_format = config.get('date_format', "%Y-%m-%d")
-
-        # [修改点 1] 无论配置文件怎么写，我们在读取 CSV 时都不去读 log_return
-        # 因为我们要自己算。从列表中暂时剔除 'log_return'
-        all_features = config.get('additional_features', [])
-        self.features_to_read = [f for f in all_features if f != 'log_return']
-        self.target_feature_name = 'log_return' # 我们统一生成的小写名称
-
+        self.additional_features = config.get('additional_features', [])
         self.end_date = config.get('end_date')
         self.data_path = config.get('data_path')
         self.start_date = config.get('start_date')
@@ -72,13 +65,8 @@ class DataConverter:
         new_df = {}
         for key in ['Timestamp', 'High', 'Low', 'Open', 'Close', 'Volume']:
             new_df[key] = []
-
-        # for key in self.additional_features:
-        #     new_df[key] = []
-        # 初始化额外特征列 (只初始化我们要从 CSV 读的那些)
-        for key in self.features_to_read:
+        for key in self.additional_features:
             new_df[key] = []
-
         for i in tqdm(range(start, stop - self.jumps // 60 + 1, self.jumps)):
             high, low, open, close, vol = self.merge_data(data, i, self.jumps)
             additional_features = self.merge_additional(data, i, self.jumps)
@@ -94,16 +82,6 @@ class DataConverter:
                 new_df.get(key).append(additional_features.get(key))
 
         df = pd.DataFrame(new_df)
-
-        # === 新增：计算 Log Return ===
-        # log_return = ln(Close_t) - ln(Close_t-1)
-        # 加上 1e-8 防止 log(0)
-        # 加上 1e-8 防止 log(0)
-        df[self.target_feature_name] = np.log(df['Close'] + 1e-8) - np.log(df['Close'].shift(1) + 1e-8)
-        # 第一行会变成 NaN (因为没有前一天)，填充为 0
-        df[self.target_feature_name] = df[self.target_feature_name].fillna(0.0)
-        # 处理无穷大值（如果 Close 突然从 0 变别的）
-        df[self.target_feature_name] = df[self.target_feature_name].replace([np.inf, -np.inf], 0.0)
 
         return df
 
@@ -184,14 +162,8 @@ class DataConverter:
             return None, None, None, None, None
         row = tmp.iloc[-1]
         results = {}
-        # [修改点 3] 这里只遍历 features_to_read，避免去 CSV 找 log_return 报错
-        for key in self.features_to_read:
-            # 增加容错：如果 CSV 里连 features_to_read 里的列都没有，就填 0
-            val = row.get(key, 0.0) 
-            try:
-                results[key] = float(val)
-            except:
-                results[key] = 0.0
+        for key in self.additional_features:
+            results[key] = float(row.get(key))
         return results
     
     def generate_timestamp(self, date):
