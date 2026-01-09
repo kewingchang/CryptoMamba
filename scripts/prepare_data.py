@@ -7,16 +7,11 @@ import requests
 import yfinance as yf
 import os
 import ta
-# 引入 Dune Client
-from dune_client.client import DuneClient
-from dune_client.query import QueryBase
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Add additional features to CSV file.')
 parser.add_argument('--ticker', type=str, required=True, help='Yahoo Finance Ticker (e.g., BTC-USD)')
 parser.add_argument('--filename', type=str, required=False, help='The CSV file name to save (optional)')
-# 增加 Dune API Key 参数
-parser.add_argument('--dune_api', type=str, required=False, default=None, help='Dune Analytics API Key')
 
 args = parser.parse_args()
 
@@ -26,7 +21,7 @@ if args.filename:
 else:
     filename = f"{args.ticker}.csv"
 
-# 1. Fetch Data from Yahoo Finance (Last 1 year to ensure enough buffer for TA windows)
+# 1. Fetch Data from Yahoo Finance
 print(f"Fetching last 1 year of data for {args.ticker}...")
 ticker_obj = yf.Ticker(args.ticker)
 df = ticker_obj.history(period="1y")
@@ -34,11 +29,10 @@ df = ticker_obj.history(period="1y")
 if df.empty:
     raise ValueError(f"No data found for ticker {args.ticker}")
 
-# Reset index to make Date a column (yfinance sets Date as index by default)
+# Reset index to make Date a column
 df = df.reset_index()
 
-# Yfinance returns timezone-aware datetimes. We convert to timezone-naive
-# to prevent issues with other libraries or merging.
+# Yfinance returns timezone-aware datetimes. We convert to timezone-naive.
 if pd.api.types.is_datetime64_any_dtype(df['Date']):
     df['Date'] = df['Date'].dt.tz_localize(None)
 
@@ -49,7 +43,6 @@ df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
 df = df.sort_values('Date', ascending=True)
 
 # 3. 设置为索引
-# 注意：所有的 shift/rolling/ta 计算都应在此之后进行
 df = df.set_index('Date')
 
 # Ensure required columns exist
@@ -58,168 +51,57 @@ for col in required_cols:
     if col not in df.columns:
         raise ValueError(f"Missing required column: {col}")
 
-# --- Dune Analytics 数据获取开始 ---
-if args.dune_api:
-    print("Fetching Gas Used data from Dune Analytics (Query 741)...")
-    try:
-        dune = DuneClient(args.dune_api)
-        
-        # 构建 Query 对象
-        # name 只是本地标识，query_id 必须是 741
-        query = QueryBase(name="Ethereum Gas Data", query_id=741)
-        
-        # 使用 run_query() 替代 refresh()
-        # 这会强制触发 Dune 重新运行查询并等待结果
-        print("Triggering new execution on Dune (this may take a moment)...")
-        query_result = dune.run_query(query)
-        
-        # 将结果转换为 DataFrame
-        dune_data = query_result.result.rows
-        dune_df = pd.DataFrame(dune_data)
-        
-        # Dune 返回的列名通常是小写的，但为了保险起见进行标准化
-        dune_df.columns = [c.lower() for c in dune_df.columns]
-        
-        # 查找日期列
-        date_col = 'time'
-        if date_col and 'gas_used' in dune_df.columns:
-            # 处理日期格式并去除时区，以便与 Yahoo Finance 数据对齐
-            dune_df['Date'] = pd.to_datetime(dune_df[date_col]).dt.tz_localize(None)
-            
-            # 确保 gas_used 是数值类型
-            dune_df['gas_used'] = pd.to_numeric(dune_df['gas_used'], errors='coerce')
-            
-            # 设置索引以便合并
-            dune_df = dune_df.set_index('Date')
-            
-            # 只保留 gas_used 列
-            dune_subset = dune_df[['gas_used']]
-            
-            # 合并数据 (Left Join)
-            # 以 Yahoo Finance 的日期为准。
-            # 因为 df 只有过去60天，merge 后 dune 的数据也会自动限制在过去60天。
-            original_cols = len(df.columns)
-            df = df.join(dune_subset, how='left')
-            
-            print(f"Dune 'gas_used' merged. Added {len(df.columns) - original_cols} column(s).")
-            
-            # 简单的缺失值填充策略：如果当天没数据，用前一天的数据填充 (Forward Fill)
-            # 链上数据偶尔会有几小时延迟，ffill 能防止 dropna 删除掉最新的那一行
-            if 'gas_used' in df.columns:
-                df['gas_used'] = df['gas_used'].ffill()
-
-        else:
-            print(f"Warning: Expected columns ('time' and 'gas_used') not found in Dune response. Keys found: {dune_df.columns}")
-
-    except Exception as e:
-        print(f"Error fetching/merging Dune data: {e}")
-        # 如果获取失败，代码继续运行，不中断，只是缺少该特征
-else:
-    print("Skipping Dune data (API Key is missing or default).")
-
-# --- Dune Analytics 数据获取结束 ---
-
-
 # --- 特征工程开始 ---
 
-# 添加 TA 库的 momentum_stoch 特征
-# Stochastic Oscillator (随机指标)
-# 公式: 100 * (Close - Lowest Low) / (Highest High - Lowest Low)
-# 默认窗口 window=14, smooth_window=3
+# 1. 使用 ta.add_all_ta_features 一次性生成所有特征
+# 这样可以保证与你之前的数据完全一致（包括 fillna=True 的行为）
+print("Calculating all TA features using library defaults...")
 try:
-    df['momentum_stoch'] = ta.momentum.stoch(
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close'],
-        window=14,
-        smooth_window=3
+    # 这个函数会生成大约 80+ 个特征列
+    df = ta.add_all_ta_features(
+        df, 
+        open="Open", 
+        high="High", 
+        low="Low", 
+        close="Close", 
+        volume="Volume", 
+        fillna=True
     )
-    print("Feature 'momentum_stoch' added.")
+    print("All TA features added.")
 except Exception as e:
-    print(f"Error calculating momentum_stoch: {e}")
+    print(f"Error in add_all_ta_features: {e}")
 
-# 添加 TA 库的 stoch_rsi_indicator 特征
+# 2. 时间特征
 try:
-    # 直接计算 StochRSI K
-    df['momentum_stoch_rsi'] = ta.momentum.stochrsi(
-        close=df['Close'], 
-        window=14, 
-        smooth1=3, 
-        smooth2=3
-    )
-    print("Feature 'momentum_stoch_rsi' added.")
-except Exception as e:
-    print(f"Error calculating momentum_stoch_rsi: {e}")
-
-# 添加 TA 库的 ATR_14 特征
-# Average True Range (平均真实波幅)
-# 用于衡量波动率，window=14
-try:
-    df['ATR_14'] = ta.volatility.average_true_range(
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close'],
-        window=14
-    )
-    print("Feature 'ATR_14' added.")
-except Exception as e:
-    print(f"Error calculating ATR_14: {e}")
-
-# 添加 EMA 7 和 EMA 14
-# Exponential Moving Average (指数移动平均线)
-try:
-    df['EMA_7'] = ta.trend.ema_indicator(
-        close=df['Close'],
-        window=7
-    )
-    df['EMA_14'] = ta.trend.ema_indicator(
-        close=df['Close'],
-        window=14
-    )
-    print("Features 'EMA_7' and 'EMA_14' added.")
-except Exception as e:
-    print(f"Error calculating EMA: {e}")
-
-# 添加 DPO (Detrended Price Oscillator)
-# 去趋势价格震荡指标，通常 window=20
-try:
-    df['trend_dpo'] = ta.trend.dpo(
-        close=df['Close'],
-        window=20
-    )
-    print("Feature 'trend_dpo' added.")
-except Exception as e:
-    print(f"Error calculating trend_dpo: {e}")
-
-# 【新增】添加 TA 库 volatility_bbli
-# Bollinger Bands Lower Indicator (如果 Close < Lower Band 则为 1，否则为 0)
-# 默认: window=20, window_dev=2
-try:
-    df['volatility_bbli'] = ta.volatility.bollinger_lband_indicator(
-        close=df['Close'],
-        window=20,
-        window_dev=2
-    )
-    print("Feature 'volatility_bbli' added.")
-except Exception as e:
-    # 修复了这里的错误提示，之前是 trend_dpo
-    print(f"Error calculating volatility_bbli: {e}")
-
-# 时间特征
-# 直接使用 df.index 计算，确保与 DataFrame 行对齐
-try:
-    # 获取索引中的日期并加1天
     next_dates = df.index + pd.Timedelta(days=1)
-
     df['next_weekday'] = next_dates.weekday
     df['next_is_weekend'] = df['next_weekday'].isin([5, 6]).astype(int)
-
     weekday = df.index.weekday
     df['wd_angle'] = np.arctan2(np.sin(2 * np.pi * weekday / 7), np.cos(2 * np.pi * weekday / 7))
-
     print("Time features added.")
 except Exception as e:
     print(f"Error calculating time features: {e}")
+
+# --- 特征筛选与重命名 ---
+
+# 定义我们最终想要保留的列
+keep_columns = [
+    # 基础列
+    'Open', 'High', 'Low', 'Close', 'Volume',
+    
+    # 从 add_all_ta_features 中提取的目标特征
+    'volatility_bbli',      # 布林带下轨指示器
+    'volatility_bbl',       # BB_Lower
+    
+    # 时间特征
+    'next_weekday', 'next_is_weekend', 'wd_angle'
+]
+
+# 过滤 DataFrame，只保留存在的列
+existing_cols = [col for col in keep_columns if col in df.columns]
+df = df[existing_cols]
+
+print(f"Selected {len(df.columns)} features from the generated set.")
 
 # --- 特征工程结束 ---
 
@@ -227,10 +109,11 @@ except Exception as e:
 df = df.reset_index()
 
 # 5. Clean Data: Remove empty rows
-# (Rolling window of 14 or 20 creates NaNs at the start)
+# 虽然使用了 fillna=True，但为了保险起见还是检查一下
 original_len = len(df)
 df = df.dropna()
-print(f"Removed {original_len - len(df)} rows containing NaN values.")
+if original_len != len(df):
+    print(f"Removed {original_len - len(df)} rows containing NaN values.")
 
 # Optional: Sort descending (Newest first)
 df = df.sort_values('Date', ascending=False)

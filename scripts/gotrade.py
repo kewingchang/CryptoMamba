@@ -1,4 +1,4 @@
-# one_day_pred.py
+# gotrade.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
@@ -12,8 +12,6 @@ from datetime import datetime
 from argparse import ArgumentParser
 from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
-# 引入新的计算函数
-from utils.trade import buy_sell_vanilla, buy_sell_smart, calculate_trade_setup
 import warnings
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -51,6 +49,13 @@ def get_args():
         type=str,
         default='cmamba_v',
         help="Path to config file.",
+    )
+    parser.add_argument(
+        "--model",
+        required=False,
+        type=str,
+        default='v2',
+        help="Path to model config file.",
     )
     parser.add_argument(
         '--use_volume', 
@@ -96,37 +101,44 @@ def init_dirs(args, date):
     txt_file = open(f'{path}/{date}.txt', 'w')
     return txt_file
 
-def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
-    arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
-    model_arch = config.get('model')
-    model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
+def load_model(config, model_path, ckpt_path, feature_names=None, skip_revin=None):
+    model_config_path = f'{ROOT}/configs/models/CryptoMamba/{model_path}.yaml'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     normalize = model_config.get('normalize', False)
-    
-    # === [注入训练配置中的超参数] ===
-    hyperparams = config.get('hyperparams')
-    if hyperparams is not None:
-        for key in hyperparams.keys():
-            # 这会将 y_key: 'log_return' 注入到 params 中
-            model_config.get('params')[key] = hyperparams.get(key)
-
-    # 注入特征名称
+    # 注入参数
     if feature_names is not None:
         model_config.get('params')['feature_names'] = feature_names
     if skip_revin is not None:
         model_config.get('params')['skip_revin'] = skip_revin
-        
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
-    
-    # 使用更新后的 params 加载模型
-    model = model_class.load_from_checkpoint(
-        ckpt_path, 
-        **model_config.get('params'),
-        weights_only=False
-    )
+    model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'),weights_only=False)
     model.cuda()
-    model.eval() # 预测模式
+    model.eval()
     return model, normalize
+
+@torch.no_grad()
+def run_model(model, dataloader):
+    target_list = []
+    preds_list = []
+    timetamps = []
+    with torch.no_grad():
+        for batch in dataloader:
+            ts = batch.get('Timestamp').numpy().reshape(-1)
+            target = batch.get('Close').numpy().reshape(-1)
+            features = batch.get('features').to(model.device)
+            preds = model(features).cpu().numpy().reshape(-1)
+            target_list += [float(x) for x in list(target)]
+            preds_list += [float(x) for x in list(preds)]
+            timetamps += [float(x) for x in list(ts)]
+    targets = np.asarray(target_list)
+    preds = np.asarray(preds_list)
+    targets_tensor = torch.tensor(target_list)
+    preds_tensor = torch.tensor(preds_list)
+    timetamps = [datetime.fromtimestamp(int(x)) for x in timetamps]
+    loss = float(model.loss(preds_tensor, targets_tensor))
+    mape = float(model.mape(preds_tensor, targets_tensor))
+    return timetamps, targets, preds, loss, mape
+
 
 
 if __name__ == "__main__":
@@ -139,9 +151,14 @@ if __name__ == "__main__":
 
     use_volume = config.get('use_volume', args.use_volume)
 
-    # 获取 feature_names
+    # [移位] 先创建 Transform 以获取 keys
+    # train_transform = DataTransform(is_train=True, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    # val_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+    # test_transform = DataTransform(is_train=False, use_volume=use_volume, additional_features=config.get('additional_features', []))
+
+    # [新增] 获取 feature_names
     # feature_names = [k for k in test_transform.keys if k != 'Timestamp_orig']
-    feature_names = ['Open', 'High', 'Low'] 
+    feature_names = ['Open', 'High', 'Low', 'Close']
     if use_volume:
         feature_names.append('Volume')
     # additional_features 里包含了 'log_return'
@@ -151,113 +168,75 @@ if __name__ == "__main__":
     print(f"Features for inference: {feature_names}")
 
     # 2. 加载模型
-    model, normalize = load_model(config, args.ckpt_path, feature_names, skip_revin_list)
+    model_path = args.model
+    model, normalize = load_model(config, model_path, args.ckpt_path, feature_names, skip_revin_list)
 
     data = pd.read_csv(args.data_path)
     if 'Date' in data.keys():
         data['Timestamp'] = [float(time.mktime(datetime.strptime(x, "%Y-%m-%d").timetuple())) for x in data['Date']]
-    data = data.sort_values(by='Timestamp').reset_index(drop=True)
-
-    # === [关键修改]: 手动计算 log_return ===
-    # 因为 CSV 里可能没有这一列，或者计算方式不一致
-    # log_return = ln(Close_t) - ln(Close_t-1)
-    data['log_return'] = np.log(data['Close'] + 1e-8) - np.log(data['Close'].shift(1) + 1e-8)
-    data['log_return'] = data['log_return'].fillna(0.0) # 填充第一行
-    data['log_return'] = data['log_return'].replace([np.inf, -np.inf], 0.0)
+    data = data.sort_values(by='Timestamp').reset_index()
     
     # end_date = "2024-27-10"
     if args.date is None:
         end_ts = max(data['Timestamp']) + 24 * 60 * 60
     else:
         end_ts = int(time.mktime(datetime.strptime(args.date, "%Y-%m-%d").timetuple()))
-    
-    # 截取过去 Window Size 的数据 (通常是 14天)
-    # 我们多取一点缓冲
-    start_ts = end_ts - 20 * 24 * 60 * 60 
+    start_ts = end_ts - 14 * 24 * 60 * 60 - 60 * 60
     pred_date = datetime.fromtimestamp(end_ts).strftime("%Y-%m-%d")
-    
-    # 获取截止到预测日前一天的历史数据
-    # 比如预测 2024-10-28，我们需要截至 2024-10-27 的 Close
-    data_window = data[data['Timestamp'] < end_ts].copy()
-    
-    # 确保有足够的数据
-    window_size = model.window_size # 比如 14
-    if len(data_window) < window_size + 1:
-        raise ValueError(f"Not enough data to predict. Need at least {window_size+1} rows.")
-    
-    # 取最后 window_size + 1 行 (类似于 dataset.py 的逻辑)
-    # dataset.py 取 i:i+window_size+1，其中最后一行是 target，前面是 features
-    # 但推理时，我们需要用最后 window_size 行作为输入，预测未来
-    # 这里我们取最后 window_size 行作为 input features
-    input_df = data_window.iloc[-window_size:]
-    
-    # 记录"今天" (input_df 的最后一行) 的价格，作为还原基准
-    last_close_price = float(input_df.iloc[-1]['Close'])
-
-    # 严格检查并提取指标数据
-    required_cols = ['ATR_14', 'EMA_7', 'EMA_14']
-    # 检查列是否存在
-    missing_cols = [col for col in required_cols if col not in input_df.columns]
-    if missing_cols:
-        raise ValueError(f"CRITICAL ERROR: Missing required columns in data CSV: {missing_cols}. "
-                         f"Cannot proceed with trading logic.")
-    # 检查是否有 NaN 值 (EMA计算初期可能有NaN)
-    if input_df.iloc[-1][required_cols].isnull().any():
-        raise ValueError(f"CRITICAL ERROR: NaN values found in the latest row for {required_cols}. "
-                         f"Need more historical data to calculate indicators.")
-
-    # 安全提取
-    last_atr = float(input_df.iloc[-1]['ATR_14'])
-    last_ema_7 = float(input_df.iloc[-1]['EMA_7'])
-    last_ema_14 = float(input_df.iloc[-1]['EMA_14'])
+    data = data[data['Timestamp'] < end_ts]
+    data = data[data['Timestamp'] >= start_ts - 60 * 60]
 
     txt_file = init_dirs(args, pred_date)
-
-    # 4. 构建 Input Tensor
-    features_map = {}
     
-    # 遍历模型需要的特征列表 (feature_names)
-    for key in feature_names:
-        tmp = list(input_df.get(key))
-        
-        # 处理 Volume 缩放
+    
+    features = {}
+    key_list = ['Open', 'High', 'Low', 'Close']
+    if use_volume:
+        key_list.append('Volume')
+    key_list += config.get('additional_features', [])  # 新增：包含 additional_features，如 ['marketCap']
+    
+    for key in key_list:
+        tmp = list(data.get(key))
+        if normalize:
+            pass
+            # scale = data_module.factors.get(key).get('max') - data_module.factors.get(key).get('min')
+            # shift = data_module.factors.get(key).get('min')
+        else:
+            scale = 1
+            shift = 0
         if key == 'Volume':
             tmp = [x / 1e9 for x in tmp]
-        
-        # 归一化 (如果 normalize=True)
-        if normalize and factors:
-            scale = factors.get(key).get('max') - factors.get(key).get('min')
-            shift = factors.get(key).get('min')
-            tmp = [(x - shift) / scale for x in tmp]
-        
-        # 转换为 Tensor: (1, window_size)
-        features_map[key] = torch.tensor(tmp).float().reshape(1, -1)
+        tmp = [(x - shift) / scale for x in tmp]
+        features[key] = torch.tensor(tmp).reshape(1, -1)
+        if key == 'Timestamp':
+            t_scale = scale
+            t_shift = shift
+        if key == model.y_key:
+            scale_pred = scale
+            shift_pred = shift
 
-    # 拼接: (Num_Features, Window_Size)
-    # 注意顺序必须与 feature_names 一致
-    x = torch.cat([features_map.get(k) for k in feature_names], dim=0)
+    x = torch.cat([features.get(x) for x in key_list], dim=0)  # 注意：这里使用 key_list，确保顺序与训练一致
 
-    # 5. 推理
+    # close_idx = -2 if use_volume else -1  # 如果添加了 marketCap，close_idx 需调整为 key_list.index('Close') - len(key_list)，但当前 -1 是 marketCap，-2 是 Close？不。
+    # 修正：close_idx 应基于 key_list 的位置；当前 key_list[-2] 是 Close（因为最后是 marketCap），所以 close_idx = -2 if not use_volume else 调整
+    # 但原代码 close_idx = -2 if use_volume else -1；由于 use_volume=False，且多了 marketCap，Close 是倒数第二，所以 close_idx = -2
+    close_idx = key_list.index('Close')  # 用 index 动态获取，避免硬编码
+    today = float(x[close_idx, -1]) * scale_pred + shift_pred
+
     with torch.no_grad():
-        # Input shape: (1, C, L) -> Batch=1
-        x_input = x.unsqueeze(0).cuda()
-        
-        # Model forward -> 得到归一化的 log_return
-        pred_raw = model(x_input).reshape(-1)
-        
-        # RevIN 反归一化
-        if hasattr(model.model, 'revin') and model.model.revin is not None:
-             # denormalize 内部需要找到 target index
-             # 确保 base_module.denormalize 逻辑正确
-             _, pred_log_return = model.denormalize(None, pred_raw)
-             pred_log_return = float(pred_log_return.item())
+        pred = model(x[None, ...].cuda()).cpu()
+        if normalize:
+            pred = float(pred) * scale_pred + shift_pred
+        elif hasattr(model.model, 'revin') and model.model.revin is not None:
+            pred_tensor = pred.reshape(-1).to(model.device)  # Add .to(model.device)
+            _, pred_tensor = model.denormalize(None, pred_tensor)
+            pred = float(pred_tensor.cpu()[0])  # Move back to CPU if needed
         else:
-             pred_log_return = float(pred_raw.item())
-
+            pred = float(pred)
+    
     # 6. 价格还原
-    pred_price = last_close_price * np.exp(pred_log_return)
-    # "Today value" 在这里的语境下，通常指最近已知的价格 (last_close_price)
-    today_price = last_close_price
+    pred_price = pred
+    today_price = today
 
     print('')
     print_and_write(txt_file, f'Prediction date: {pred_date}')
@@ -267,9 +246,6 @@ if __name__ == "__main__":
     # 计算预测涨跌幅
     pct_change = (pred_price - today_price) / today_price * 100
     print_and_write(txt_file, f'Predicted Change: {round(pct_change, 2)}%')
-    # pred_log_return
-    # print_and_write(txt_file, f'Predicted log_return: {round(pred_log_return, 5)}%')
-    # print_and_write(txt_file, f'Current ATR_14: {round(last_atr, 2)}')
 
     # 7. 实战交易逻辑 (Real-World Trading Logic)
     print_and_write(txt_file, '-' * 30)
@@ -302,39 +278,12 @@ if __name__ == "__main__":
     elif x_factor >= X_WEAK_THRESHOLD:
         trade_mode = 'conservative'
         print_and_write(txt_file, f'[DECISION]: OPEN {direction} (WEAK SIGNAL - SNIPER MODE)')
-        # print_and_write(txt_file, f'Reason: Low expected return. Using limit orders only to catch wicks.')
     else:
         print_and_write(txt_file, f'[DECISION]: WAIT / NO TRADE')
-        # print_and_write(txt_file, f'Reason: Signal too weak (x < {X_WEAK_THRESHOLD})')
 
     # 执行计算
     if trade_mode and not args.paper_trading:
-        orders, stop_loss = calculate_trade_setup(
-            today_price,
-            direction,
-            last_atr,
-            mode=trade_mode,
-            ema7=last_ema_7,
-            ema14=last_ema_14
-        )
-        # print long or short
-        print_and_write(txt_file, '-' * 20)
-        print_and_write(txt_file, f'{direction}')
-        print_and_write(txt_file, '-' * 20) 
-        print_and_write(txt_file, f'TAKE PROFIT: {round(pred_price, 2)}')
-        print_and_write(txt_file, f'STOP LOSS: {round(stop_loss, 2)}')
-        print_and_write(txt_file, f'EXECUTION PLAN ({trade_mode.upper()}):')
-        
-        for idx, order in enumerate(orders):
-            o_type = order['type'].upper()
-            size = int(order['size'] * 100)
-            
-            if order['type'] == 'market':
-                price_str = f"Market (approx {round(order['price'], 2)})"
-            else:
-                price_str = f"{round(order['price'], 2)}"
-                
-            print_and_write(txt_file, f"  Order #{idx+1}: {o_type} | Size: {size}% | Price: {price_str}")
+        pass
     else:
         print_and_write(txt_file, '-' * 20)
         print_and_write(txt_file, f'{direction}')

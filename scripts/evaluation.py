@@ -105,6 +105,14 @@ def print_and_write(file, txt, add_new_line=True):
     else:
         file.write(txt)
 
+def save_all_hparams(log_dir, args):
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    save_dict = vars(args)
+    save_dict.pop('checkpoint_callback')
+    with open(log_dir + '/hparams.yaml', 'w') as f:
+        yaml.dump(save_dict, f)
+
 def init_dirs(args, name):
     path = f'{ROOT}/Results/{name}/{args.config}'
     if not os.path.isdir(path):
@@ -138,28 +146,20 @@ def run_model(model, dataloader, factors=None):
     with torch.no_grad():
         for batch in dataloader:
             ts = batch.get('Timestamp').numpy().reshape(-1)
-            
-            # [修改 1]: 获取真实价格 target (美元)，而不是 log_return
-            # 注意：DataTransform 必须在 output 中包含 'Close'
-            target_price = batch.get('Close').numpy().reshape(-1)
-            price_old = batch.get('Close_old').to(model.device) # 用于还原
-
+            target = batch.get(model.y_key).numpy().reshape(-1)
             features = batch.get('features').to(model.device)
-            
-            # 模型输出的是 归一化后的 log_return
-            preds_raw = model(features).reshape(-1)
-            
-            # [修改 2]: 反归一化 (RevIN) 得到真实的 log_return
-            # 注意：传入 None 作为 y，因为我们只需要反归一化 preds
-            _, preds_log_return = model.denormalize(None, preds_raw)
-            
-            # [修改 3]: 价格还原
-            # Pred_Price = Price_Old * exp(Log_Return)
-            preds_price = price_old * torch.exp(preds_log_return)
-            preds_price = preds_price.cpu().numpy().reshape(-1)
-
-            target_list += [float(x) for x in list(target_price)]
-            preds_list += [float(x) for x in list(preds_price)]
+            preds = model(features).cpu().numpy().reshape(-1)
+            if factors is not None:
+                scale = factors.get(model.y_key).get('max') - factors.get(model.y_key).get('min')
+                shift = factors.get(model.y_key).get('min')
+                target = target * scale + shift
+                preds = preds * scale + shift
+            elif hasattr(model.model, 'revin') and model.model.revin is not None:
+                preds_tensor = torch.tensor(preds).to(model.device)
+                _, preds_tensor = model.denormalize(None, preds_tensor)
+                preds = preds_tensor.cpu().numpy()
+            target_list += [float(x) for x in list(target)]
+            preds_list += [float(x) for x in list(preds)]
             timetamps += [float(x) for x in list(ts)]
 
     targets = np.asarray(target_list)
@@ -237,43 +237,28 @@ if __name__ == "__main__":
         all_targets += list(targets)
         txt = print_format.format(key, round(mse, 3), round(np.sqrt(mse), 3), round(mape, 5), round(l1, 3))
         print_and_write(f, txt)
-        
-        # 交易统计逻辑
+        # ADD BY KEWING
+        # 新加：计算方向准确率、胜率、平均交易亏损、最大交易亏损（只针对 Test）
         if key == 'Test':
-            prev_targets = np.roll(targets, 1)[1:] 
-            prev_preds = np.roll(preds, 1)[1:]      
-            
-            # 方向准确率 (预测价格相对于昨天的真实价格是涨是跌)
-            # 注意：这里的 targets 是 Price。
-            # 昨天的真实价格其实就是 run_model 里的 price_old，也就是 targets 的前一个值。
-            # 为了简单起见，我们直接比较 (Pred_t - Actual_{t-1}) 的符号 与 (Actual_t - Actual_{t-1}) 的符号
-            
-            # 使用 numpy 向量化计算
-            # 实际变动
-            actual_delta = targets[1:] - targets[:-1]
-            # 预测变动 (预测的今天 - 昨天的真实)
-            # 注意：preds[i] 是基于 targets[i-1] 算出来的，所以比较基准是 targets[:-1]
-            pred_delta = preds[1:] - targets[:-1]
-            
-            actual_dir = actual_delta > 0
-            pred_dir = pred_delta > 0
-            
-            direction_acc = np.mean(actual_dir == pred_dir) * 100
+            prev_targets = np.roll(targets, 1)[1:]  # 前一实际值，忽略首 NaN
+            prev_preds = np.roll(preds, 1)[1:]      # 前一预测值，忽略首 NaN
+            actual_directions = targets[1:] > prev_targets  # 实际涨跌 (True=涨)
+            pred_directions = preds[1:] > prev_preds        # 预测涨跌 (True=涨)
+            direction_acc = np.mean(actual_directions == pred_directions) * 100
             print(f"Test Direction Accuracy: {direction_acc:.2f}%")
             
-            # 模拟交易回报 (做多/做空)
-            actual_returns = actual_delta / targets[:-1]
-            trade_pnl = np.where(pred_dir, actual_returns, -actual_returns)
-            
-            win_rate = np.mean(trade_pnl > 0) * 100
-            losses = trade_pnl[trade_pnl < 0]
-            avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0
-            max_loss = np.min(trade_pnl) * 100
-            
+            # 计算交易 P&L（简单策略：预测涨做多、预测跌做空）
+            actual_returns = (targets[1:] - prev_targets) / prev_targets  # 实际回报率
+            trade_pnl = np.where(pred_directions, actual_returns, -actual_returns)  # 做多/做空回报
+            win_rate = np.mean(trade_pnl > 0) * 100  # 胜率（盈利交易比例）
+            losses = trade_pnl[trade_pnl < 0]  # 亏损交易
+            avg_loss = np.mean(losses) * 100 if len(losses) > 0 else 0  # 平均亏损（%）
+            max_loss = np.min(trade_pnl) * 100  # 最大单笔亏损（%）
             print(f"Test Win Rate: {win_rate:.2f}%")
             print(f"Test Average Trade Loss: {avg_loss:.2f}%")
             print(f"Test Maximum Trade Loss: {max_loss:.2f}%")
-
+        # 
+        # plt.plot(timstamps, preds, color=c)
         sns.lineplot(x=timstamps, y=preds, color=c, linewidth=2.5, label=key)
 
     sns.lineplot(x=all_timestamps, y=all_targets, color='blue', zorder=0, linewidth=2.5, label='Target')
