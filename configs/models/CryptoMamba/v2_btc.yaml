@@ -1,0 +1,12 @@
+normalize: false
+params:
+  d_states: 64
+  hidden_dims:
+  - 5
+  - 16
+  - 32
+  - 1
+  layer_density: 4
+  num_features: 5
+  revin: true
+target: pl_modules.cmamba_module.CryptoMambaModule
