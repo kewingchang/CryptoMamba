@@ -1,17 +1,14 @@
-data_config: 'mode_1'
-model: 'CMamba_v2'
-
-name: 'CMamba'
-max_epochs: 1000
-use_volume: False
-additional_features: ["log_return", "momentum_stoch_rsi", "trend_dpo"]
-
-skip_revin: []
-
+additional_features:
+- volatility_bbl
+data_config: mode_1
 hyperparams:
-    optimizer: 'adamw'
-    lr: 0.0001
-    weight_decay: 0.001
-    loss_type: 'rmse'
-    alpha: 0.7
-    y_key: 'log_return'
+  alpha: 0.7
+  loss_type: rmse
+  lr: 0.0001
+  optimizer: adamw
+  weight_decay: 0.001
+max_epochs: 1000
+model: CMamba_v2
+name: CMamba
+skip_revin: []
+use_volume: false
