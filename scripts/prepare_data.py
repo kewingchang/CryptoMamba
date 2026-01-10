@@ -11,15 +11,15 @@ import ta
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Add additional features to CSV file.')
 parser.add_argument('--ticker', type=str, required=True, help='Yahoo Finance Ticker (e.g., BTC-USD)')
-parser.add_argument('--filename', type=str, required=False, help='The CSV file name to save (optional)')
+parser.add_argument('--save_to', type=str, default='data', help='Directory path to save the CSV file (default: data)')
 
 args = parser.parse_args()
 
-# Determine filename
-if args.filename:
-    filename = args.filename
-else:
-    filename = f"{args.ticker}.csv"
+# Determine filename and directory
+# 文件名固定为 Ticker.csv
+filename = f"{args.ticker}.csv"
+# 目录由参数指定
+output_dir = args.save_to
 
 # 1. Fetch Data from Yahoo Finance
 print(f"Fetching last 1 year of data for {args.ticker}...")
@@ -118,8 +118,7 @@ if original_len != len(df):
 # Optional: Sort descending (Newest first)
 df = df.sort_values('Date', ascending=False)
 
-# 6. Save to 'data' directory
-output_dir = "data"
+# 6. Save to specified directory
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
