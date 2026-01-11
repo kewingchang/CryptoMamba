@@ -150,17 +150,22 @@ if __name__ == "__main__":
         data['Timestamp'] = [float(time.mktime(datetime.strptime(x, "%Y-%m-%d").timetuple())) for x in data['Date']]
     data = data.sort_values(by='Timestamp').reset_index(drop=True)
 
+    # 价格余量
+    price_margin = 0
+
     # 特征工程 (Feature Engineering) 
     # 必须与 dataset.py 中的逻辑保持一致    
     # 计算 log_return_low (如果模型需要)
     # log_return_low = ln(Low / Open)
     if 'log_return_low' in feature_names:
         data['log_return_low'] = np.log(data['Low'] + 1e-8) - np.log(data['Open'] + 1e-8)
+        price_margin = 3
 
     # 新增处理 log_return_high (适配 High 模型)
     if 'log_return_high' in feature_names:
         # ln(High / Open)
         data['log_return_high'] = np.log(data['High'] + 1e-8) - np.log(data['Open'] + 1e-8)
+        price_margin = -3
 
     # 填充 NaN
     data = data.fillna(0.0).replace([np.inf, -np.inf], 0.0)
@@ -237,10 +242,6 @@ if __name__ == "__main__":
         
         # 动态调整 Label 显示
         label = f"q={q}"
-        if q == 0.05: label += " (Low Stop)"
-        elif q == 0.95: label += " (High Stop)" # 新增 High 模型标识
-        elif q == 0.60: label += " (Buy 1/Sell 3)" # 简单示意
-            
-        print_and_write(txt_file, f'{label:<15}: {round(price_level, 2)} (Return: {pred_vals[i]*100:.2f}%)')
+        print_and_write(txt_file, f'{label:<15}: {int(price_level) + price_margin} (Return: {pred_vals[i]*100:.2f}%)')
 
     print_and_write(txt_file, '-'*30)
