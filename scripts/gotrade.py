@@ -242,6 +242,9 @@ if __name__ == "__main__":
         
         # 动态调整 Label 显示
         label = f"q={q}"
-        print_and_write(txt_file, f'{label:<15}: {int(price_level) + price_margin} (Return: {pred_vals[i]*100:.2f}%)')
+        # 止损不调整价格
+        price_margin_q = price_margin
+        if q == 0.05 or q == 0.95: price_margin_q = 0
+        print_and_write(txt_file, f'{label:<15}: {int(price_level) + price_margin_q} (Return: {pred_vals[i]*100:.2f}%)')
 
     print_and_write(txt_file, '-'*30)
