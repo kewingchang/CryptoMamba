@@ -248,7 +248,7 @@ if __name__ == "__main__":
     print_and_write(txt_file, f'Predicted Change: {round(pct_change, 2)}%')
 
     # 7. 实战交易逻辑 (Real-World Trading Logic)
-    print_and_write(txt_file, '-' * 30)
+    # print_and_write(txt_file, '-' * 30)
     # print_and_write(txt_file, '>>> TRADING SIGNAL ANALYSIS <<<')
 
     # A. 计算 Smart Factor (x)
