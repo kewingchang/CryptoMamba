@@ -50,7 +50,7 @@ def run_inference(args):
         cmd = (
             f"python scripts/gotrade.py "
             f"--config {args.config} "
-            f"--model {args.model}"
+            f"--model {args.model} "
             f"--ckpt_path {args.ckpt_path} "
             f"--data_path {args.data_path} "
             f"--risk {args.risk} "
