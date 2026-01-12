@@ -249,7 +249,7 @@ if __name__ == "__main__":
 
     # 7. 实战交易逻辑 (Real-World Trading Logic)
     print_and_write(txt_file, '-' * 30)
-    print_and_write(txt_file, '>>> TRADING SIGNAL ANALYSIS <<<')
+    # print_and_write(txt_file, '>>> TRADING SIGNAL ANALYSIS <<<')
 
     # A. 计算 Smart Factor (x)
     # x = |Pred - Today| / (Today * Risk%)
@@ -265,7 +265,6 @@ if __name__ == "__main__":
     X_STRONG_THRESHOLD = 0.5
     X_WEAK_THRESHOLD = 0.2
 
-    # print_and_write(txt_file, f'Risk Config (MAPE): {args.risk}%')
     print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)}')
 
     trade_mode = None
@@ -274,15 +273,17 @@ if __name__ == "__main__":
     # 决策逻辑分支
     if x_factor >= X_STRONG_THRESHOLD:
         trade_mode = 'aggressive'
-        print_and_write(txt_file, f'[DECISION]: OPEN {direction} (STRONG SIGNAL)')
+        print_and_write(txt_file, f'[SIGNAL]: STRONG - NO TRADE')
     elif x_factor >= X_WEAK_THRESHOLD:
         trade_mode = 'conservative'
-        print_and_write(txt_file, f'[DECISION]: OPEN {direction} (WEAK SIGNAL - SNIPER MODE)')
+        print_and_write(txt_file, f'[SIGNAL]: WEAK')
     else:
-        print_and_write(txt_file, f'[DECISION]: WAIT / NO TRADE')
+        print_and_write(txt_file, f'[SIGNAL]: WAIT')
 
     # 执行计算
     if trade_mode and not args.paper_trading:
+        pass
+    elif trade_mode == 'aggressive':
         pass
     else:
         print_and_write(txt_file, '-' * 20)
