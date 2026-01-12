@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument('--config', type=str, default='cmamba_btc', help='Config name')
     parser.add_argument('--ckpt_path', type=str, default='./checkpoints/BTC_251230.ckpt', help='Checkpoint path')
     parser.add_argument('--risk', type=float, default=2.0, help='Risk parameter')
+    parser.add_argument( "--model", required=False, type=str, default='v2', help="Path to model config file.")
     
     # 添加一个标志来决定是否清理旧日志，默认追加
     parser.add_argument('--clear_log', action='store_true', help='Clear log file before starting')
@@ -49,6 +50,7 @@ def run_inference(args):
         cmd = (
             f"python scripts/gotrade.py "
             f"--config {args.config} "
+            f"--model {args.model}"
             f"--ckpt_path {args.ckpt_path} "
             f"--data_path {args.data_path} "
             f"--risk {args.risk} "
@@ -114,11 +116,11 @@ def parse_log_and_extract_data(log_path):
         decision_text = decision_match.group(1).strip() if decision_match else ""
         
         strength = "Wait" # 默认
-        if "WAIT" in decision_text or "NO TRADE" in decision_text:
+        if "WAIT" in decision_text:
             strength = "Wait"
-        elif "STRONG SIGNAL" in decision_text:
+        elif "STRONG" in decision_text:
             strength = "Strong"
-        elif "WEAK SIGNAL" in decision_text or "SNIPER MODE" in decision_text:
+        elif "WEAK" in decision_text:
             strength = "Weak"
 
         # --- 提取 Direction (LONG/SHORT) ---
