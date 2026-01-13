@@ -91,7 +91,7 @@ def get_args():
     parser.add_argument(
         '--max_epochs',
         type=int,
-        default=200,
+        default=None,
     )
     parser.add_argument(
         '--patience',
@@ -170,15 +170,22 @@ if __name__ == "__main__":
     # [修改] 传入 feature_names 和 skip_revin_list
     model, normalize = load_model(config, args.logger_type, args.max_epochs, feature_names, skip_revin_list)
 
-    tmp = vars(args)
-    tmp.update(config)
+    # tmp = vars(args)
+    # tmp.update(config)
+    # 如果是为了 WandB/Tensorboard 记录所有参数，可以创建一个新字典
+    hparams_log = vars(args).copy() # 复制一份 args
+    hparams_log.update(config)      # 把 config 放进去作为基础
+    # 再次把非空的 args 覆盖回去，确保命令行优先级最高 (Log用)
+    for k, v in vars(args).items():
+        if v is not None:
+            hparams_log[k] = v
 
     name = config.get('name', args.expname)
     if args.logger_type == 'tb':
         logger = TensorBoardLogger("logs", name=name)
         logger.log_hyperparams(args)
     elif args.logger_type == 'wandb':
-        logger = pl.loggers.WandbLogger(project=args.expname, config=tmp)
+        logger = pl.loggers.WandbLogger(project=args.expname, config=hparams_log)
     else:
         raise ValueError('Unknown logger type.')
 
@@ -216,12 +223,19 @@ if __name__ == "__main__":
     )
     callbacks.append(early_stop_callback)
 
-    max_epochs = config.get('max_epochs', args.max_epochs)
+    # max_epochs = config.get('max_epochs', args.max_epochs)
+    # 3. 修正 max_epochs 的获取逻辑 (替换原第 224 行)
+    # 优先级：命令行(如果非None) > 配置文件 > 默认值(200)
+    if args.max_epochs is not None:
+        final_max_epochs = args.max_epochs
+    else:
+        final_max_epochs = config.get('max_epochs', 200)
     model.set_normalization_coeffs(data_module.factors)
+    print(f"Final max_epochs used: {final_max_epochs}")
 
     trainer = pl.Trainer(accelerator=args.accelerator, 
                          devices=args.devices,
-                         max_epochs=max_epochs,
+                         max_epochs=final_max_epochs,
                          enable_checkpointing=args.save_checkpoints,
                          log_every_n_steps=10,
                          logger=logger,
