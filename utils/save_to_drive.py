@@ -19,6 +19,8 @@ if __name__ == "__main__":
 	    if file.startswith('epoch') and file.endswith('.ckpt'):
 	        shutil.copy(os.path.join(source_dir, file), target_dir)
 	        print(f"Copied {file} to {target_dir}")
+	shutil.copy(os.path.join(source_dir, "last.ckpt"), target_dir)
+	print(f"Copied last.ckpt to {target_dir}")
 
 	# 拷贝其他文件和目录
 	shutil.copy('log.txt', target_dir)
