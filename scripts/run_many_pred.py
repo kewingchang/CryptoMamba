@@ -112,7 +112,7 @@ def parse_log_and_extract_data(log_path):
         # [DECISION]: WAIT / NO TRADE
         # [DECISION]: OPEN LONG (STRONG SIGNAL)
         # [DECISION]: OPEN SHORT (WEAK SIGNAL - SNIPER MODE)
-        decision_match = re.search(r'\[DECISION\]:\s+(.*)', full_block)
+        decision_match = re.search(r'\[SIGNAL\]:\s+(.*)', full_block)
         decision_text = decision_match.group(1).strip() if decision_match else ""
         
         strength = "Wait" # 默认
