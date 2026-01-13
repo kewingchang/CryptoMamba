@@ -88,11 +88,15 @@ def get_args():
         '--resume_from_checkpoint',
         default=None,
     )
-
     parser.add_argument(
         '--max_epochs',
         type=int,
         default=200,
+    )
+    parser.add_argument(
+        '--patience',
+        type=int,
+        default=100,
     )
 
     args = parser.parse_args()
@@ -206,7 +210,7 @@ if __name__ == "__main__":
     early_stop_callback = EarlyStopping(
         monitor="val/rmse",
         min_delta=0.001,
-        patience=100,
+        patience=args.patience,
         verbose=True,
         mode="min"
     )
