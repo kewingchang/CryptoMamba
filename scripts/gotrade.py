@@ -12,6 +12,7 @@ from datetime import datetime
 from argparse import ArgumentParser
 from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
+from utils.trade import get_trade_decision
 import warnings
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -82,6 +83,11 @@ def get_args():
         '--paper_trading', 
         default=False,   
         action='store_true',          
+    )
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        default="BTC",
     )
 
     args = parser.parse_args()
@@ -247,10 +253,6 @@ if __name__ == "__main__":
     pct_change = (pred_price - today_price) / today_price * 100
     print_and_write(txt_file, f'Predicted Change: {round(pct_change, 2)}%')
 
-    # 7. 实战交易逻辑 (Real-World Trading Logic)
-    # print_and_write(txt_file, '-' * 30)
-    # print_and_write(txt_file, '>>> TRADING SIGNAL ANALYSIS <<<')
-
     # A. 计算 Smart Factor (x)
     # x = |Pred - Today| / (Today * Risk%)
     risk_percent = args.risk / 100.0  # e.g., 2.2% -> 0.022
@@ -261,31 +263,41 @@ if __name__ == "__main__":
     if diff_threshold == 0: diff_threshold = 1e-8
     x_factor = abs(raw_diff) / diff_threshold
 
-    # 设定两个门槛
-    X_STRONG_THRESHOLD = 0.5
-    X_WEAK_THRESHOLD = 0.2
-
     print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)}')
-
-    trade_mode = None
     direction = "LONG" if pred_price > today_price else "SHORT"
-    
-    # 决策逻辑分支
-    if x_factor >= X_STRONG_THRESHOLD:
-        trade_mode = 'aggressive'
-        print_and_write(txt_file, f'[SIGNAL]: STRONG - NO TRADE')
-    elif x_factor >= X_WEAK_THRESHOLD:
-        trade_mode = 'conservative'
-        print_and_write(txt_file, f'[SIGNAL]: WEAK')
-    else:
-        print_and_write(txt_file, f'[SIGNAL]: WAIT')
 
-    # 执行计算
-    if trade_mode and not args.paper_trading:
-        pass
-    elif trade_mode == 'aggressive':
-        pass
+    decision, mode, final_direction = get_trade_decision(args.symbol, x_factor, direction)
+    # 输出策略
+    if decision == "WAIT":
+        print_and_write(txt_file, f'[SIGNAL]: NO TRADE') 
     else:
         print_and_write(txt_file, '-' * 20)
-        print_and_write(txt_file, f'{direction}')
+        print_and_write(txt_file, f'{final_direction}')
         print_and_write(txt_file, '-' * 20)
+
+
+    # # 设定两个门槛
+    # X_STRONG_THRESHOLD = 0.5
+    # X_WEAK_THRESHOLD = 0.2
+
+    # trade_mode = None
+
+    # # 决策逻辑分支
+    # if x_factor >= X_STRONG_THRESHOLD:
+    #     trade_mode = 'aggressive'
+    #     print_and_write(txt_file, f'[SIGNAL]: STRONG - NO TRADE')
+    # elif x_factor >= X_WEAK_THRESHOLD:
+    #     trade_mode = 'conservative'
+    #     print_and_write(txt_file, f'[SIGNAL]: WEAK')
+    # else:
+    #     print_and_write(txt_file, f'[SIGNAL]: WAIT')
+
+    # # 执行计算
+    # if trade_mode and not args.paper_trading:
+    #     pass
+    # elif trade_mode == 'aggressive':
+    #     pass
+    # else:
+    #     print_and_write(txt_file, '-' * 20)
+    #     print_and_write(txt_file, f'{direction}')
+    #     print_and_write(txt_file, '-' * 20)
