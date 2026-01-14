@@ -1,38 +1,73 @@
 
 def get_trade_decision(symbol, x_factor, pred_direction):
     """
-    根据品种和信号强度，决定怎么做
+    基于回测数据的精细化决策逻辑
+    
+    Args:
+        symbol: 'BTC-USD' or 'ETH-USD'
+        x_factor: 信号强度
+        pred_direction: 'LONG' or 'SHORT'
+        
+    Returns:
+        decision: 'OPEN' or 'WAIT'
+        mode: 'MARKET' or 'LIMIT'
+        final_direction: 实际执行方向
     """
     decision = 'WAIT'
-    mode = 'conservative'
-    inverse = False  # 是否反向交易
+    mode = 'LIMIT'
+    inverse = False
     
-    if symbol == 'BTC':
-        if 0.0 <= x_factor < 0.3:
+    # 提取基础币种名称 (兼容 BTC-USD, BTCUSDT 等)
+    base_symbol = symbol
+    
+    if base_symbol == 'BTC':
+        # BTC 策略: 避坑 + 反向
+        if 0.0 <= x_factor < 0.1:
+            # 胜率 60%，收益 +14.8%
             decision = 'OPEN'
-            mode = 'conservative' # 震荡区，挂单接
-        elif 0.9 <= x_factor < 1.0:
-            decision = 'OPEN'
-            mode = 'aggressive'   # 黄金区，追单
-        elif x_factor >= 1.0:
-            decision = 'OPEN'
-            mode = 'aggressive'
-            inverse = True        # 反向开单！
+            mode = 'LIMIT' # 信号太弱，不追市价
             
-    elif symbol == 'ETH':
-        if 0.0 <= x_factor < 0.4:
+        elif 0.1 <= x_factor < 0.2:
+            # 胜率 33%，收益 -15.4% -> 坚决反向！
             decision = 'OPEN'
-            mode = 'conservative'
-        elif x_factor >= 0.8:     # 包括了 0.8-0.9, 0.9-1.0 和 >1.0
-            decision = 'OPEN'
-            mode = 'aggressive'   # 趋势区，追单
+            mode = 'LIMIT' # 反向后变为顺势，但因波动率低，仍保守
+            inverse = True
             
+        elif 0.2 <= x_factor < 0.3:
+            # 胜率 69%，收益 +7.1% -> 黄金区间
+            decision = 'OPEN'
+            mode = 'MARKET'   # 胜率极高，值得追市价
+            
+        else:
+            # > 0.3 整体表现不佳，放弃
+            decision = 'WAIT'
+            
+    elif base_symbol == 'ETH':
+        # ETH 策略: 顺势而为
+        if 0.0 <= x_factor < 0.1:
+            # 0.0-0.1 还可以 -> 整体保守做
+            decision = 'OPEN'
+            mode = 'LIMIT'
+
+        elif 0.1 <= x_factor < 0.2:
+            # 0.1-0.2 微亏 -> 整体保守做
+            decision = 'OPEN'
+            mode = 'LIMIT - DCA2, DCA3 ONLY'
+
+        elif 0.2 <= x_factor < 0.5:
+            # 黄金爆发区！0.4-0.5 收益高达 20%
+            decision = 'OPEN'
+            mode = 'LIMIT'
+            
+        else:
+            # > 0.5 开始亏损，放弃
+            decision = 'WAIT'
+    
     # 执行反向逻辑
     final_direction = pred_direction
-    if inverse:
+    if inverse and decision == 'OPEN':
         final_direction = 'SHORT' if pred_direction == 'LONG' else 'LONG'
-        print(f"⚠️ 触发反向策略！模型预测 {pred_direction}, 实际执行 {final_direction}")
-        print("⚠️ 只下单DCA2, DCA3")
+        print(f"⚠️ [Strategy] Trigger INVERSE trade for {symbol} (x={round(x_factor,3)})")
         
     return decision, mode, final_direction
 
