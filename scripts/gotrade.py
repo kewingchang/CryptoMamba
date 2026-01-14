@@ -263,7 +263,7 @@ if __name__ == "__main__":
     if diff_threshold == 0: diff_threshold = 1e-8
     x_factor = abs(raw_diff) / diff_threshold
 
-    print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)}')
+    print_and_write(txt_file, f'Signal Strength (x): {x_factor}')
     direction = "LONG" if pred_price > today_price else "SHORT"
 
     decision, mode, final_direction = get_trade_decision(args.symbol, x_factor, direction)
@@ -272,32 +272,7 @@ if __name__ == "__main__":
         print_and_write(txt_file, f'[SIGNAL]: NO TRADE') 
     else:
         print_and_write(txt_file, '-' * 20)
+        print_and_write(txt_file, f'{mode}')
+        print_and_write(txt_file, '-' * 20)
         print_and_write(txt_file, f'{final_direction}')
         print_and_write(txt_file, '-' * 20)
-
-
-    # # 设定两个门槛
-    # X_STRONG_THRESHOLD = 0.5
-    # X_WEAK_THRESHOLD = 0.2
-
-    # trade_mode = None
-
-    # # 决策逻辑分支
-    # if x_factor >= X_STRONG_THRESHOLD:
-    #     trade_mode = 'aggressive'
-    #     print_and_write(txt_file, f'[SIGNAL]: STRONG - NO TRADE')
-    # elif x_factor >= X_WEAK_THRESHOLD:
-    #     trade_mode = 'conservative'
-    #     print_and_write(txt_file, f'[SIGNAL]: WEAK')
-    # else:
-    #     print_and_write(txt_file, f'[SIGNAL]: WAIT')
-
-    # # 执行计算
-    # if trade_mode and not args.paper_trading:
-    #     pass
-    # elif trade_mode == 'aggressive':
-    #     pass
-    # else:
-    #     print_and_write(txt_file, '-' * 20)
-    #     print_and_write(txt_file, f'{direction}')
-    #     print_and_write(txt_file, '-' * 20)
