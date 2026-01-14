@@ -1,4 +1,42 @@
 
+def get_trade_decision(symbol, x_factor, pred_direction):
+    """
+    根据品种和信号强度，决定怎么做
+    """
+    decision = 'WAIT'
+    mode = 'conservative'
+    inverse = False  # 是否反向交易
+    
+    if symbol == 'BTC':
+        if 0.0 <= x_factor < 0.3:
+            decision = 'OPEN'
+            mode = 'conservative' # 震荡区，挂单接
+        elif 0.9 <= x_factor < 1.0:
+            decision = 'OPEN'
+            mode = 'aggressive'   # 黄金区，追单
+        elif x_factor >= 1.0:
+            decision = 'OPEN'
+            mode = 'aggressive'
+            inverse = True        # 反向开单！
+            
+    elif symbol == 'ETH':
+        if 0.0 <= x_factor < 0.4:
+            decision = 'OPEN'
+            mode = 'conservative'
+        elif x_factor >= 0.8:     # 包括了 0.8-0.9, 0.9-1.0 和 >1.0
+            decision = 'OPEN'
+            mode = 'aggressive'   # 趋势区，追单
+            
+    # 执行反向逻辑
+    final_direction = pred_direction
+    if inverse:
+        final_direction = 'SHORT' if pred_direction == 'LONG' else 'LONG'
+        print(f"⚠️ 触发反向策略！模型预测 {pred_direction}, 实际执行 {final_direction}")
+        print("⚠️ 只下单DCA2, DCA3")
+        
+    return decision, mode, final_direction
+
+
 def buy_sell_smart(today, pred, balance, shares, risk=5):
     diff = pred * risk / 100
     if today > pred + diff:
