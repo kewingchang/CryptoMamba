@@ -192,6 +192,46 @@ if __name__ == "__main__":
     data = data[data['Timestamp'] < end_ts]
     data = data[data['Timestamp'] >= start_ts - 60 * 60]
 
+    # ============== 【新增代码开始】 数据完整性与连续性检查 ==============
+    required_days = 14 # 根据你的 window_size 设定
+    # 考虑到数据处理可能包含 target 列，这里确保至少有 window_size 行
+    if len(data) < required_days:
+        raise ValueError(f"[Error] Data Missing! Expected at least {required_days} days, but got {len(data)}. "
+                         f"Date range found: {pd.to_datetime(data['Timestamp'].min(), unit='s')} to {pd.to_datetime(data['Timestamp'].max(), unit='s')}")
+
+    # 按时间排序确保万无一失
+    data = data.sort_values(by='Timestamp').reset_index(drop=True)
+    
+    # 截取最后 window_size 行用于预测（Mamba通常使用最后的窗口进行预测）
+    # 注意：这里取决于你的模型是否需要 extra data，通常取最后14行
+    inference_data = data.iloc[-required_days:].copy()
+    
+    # 1. 检查最后一条数据是否是“昨天”
+    last_ts = inference_data['Timestamp'].iloc[-1]
+    # end_ts 是预测当天的 00:00:00 (或基于csv的时间)，last_ts 应该是 end_ts - 24h
+    # 允许 1小时的误差以应对时区或数据记录偏差
+    expected_last_ts = end_ts - 24 * 60 * 60
+    if abs(last_ts - expected_last_ts) > 3600:
+        last_date_str = datetime.fromtimestamp(last_ts).strftime("%Y-%m-%d")
+        expected_str = datetime.fromtimestamp(expected_last_ts).strftime("%Y-%m-%d")
+        raise ValueError(f"[Error] Data Gap! You are predicting for {args.date}, so the latest data needed is {expected_str}, "
+                         f"but the latest available data is {last_date_str}. Missing the day before prediction?")
+
+    # 2. 检查连续性 (Diff 应该等于 86400秒)
+    timestamps = inference_data['Timestamp'].values
+    time_diffs = np.diff(timestamps)
+    # 允许少许误差 (e.g. 60秒)，正常应该是 86400
+    if not np.all((time_diffs >= 86400 - 60) & (time_diffs <= 86400 + 60)):
+        # 找出断档的具体位置
+        gap_indices = np.where((time_diffs < 86340) | (time_diffs > 86460))[0]
+        bad_date_1 = datetime.fromtimestamp(timestamps[gap_indices[0]]).strftime("%Y-%m-%d")
+        bad_date_2 = datetime.fromtimestamp(timestamps[gap_indices[0]+1]).strftime("%Y-%m-%d")
+        raise ValueError(f"[Error] Non-consecutive data detected between {bad_date_1} and {bad_date_2}. "
+                         "Mamba-SSM requires strictly consecutive time steps.")
+
+    print(f"Data Integrity Check Passed: {required_days} consecutive days found ending {datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d')}")
+    # ============== 【新增代码结束】 ====================================
+
     txt_file = init_dirs(args, pred_date)
     
     
