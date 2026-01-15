@@ -36,7 +36,7 @@ def get_trade_decision(symbol, x_factor, pred_direction):
         elif 0.2 <= x_factor < 0.3:
             # 胜率 69%，收益 +7.1% -> 黄金区间
             decision = 'OPEN'
-            mode = 'MARKET'   # 胜率极高，值得追市价
+            mode = '!!!-> MARKET'   # 胜率极高，值得追市价
             
         else:
             # > 0.3 整体表现不佳，放弃
