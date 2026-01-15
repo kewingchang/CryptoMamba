@@ -1,4 +1,4 @@
-# one_day_pred.py
+# gotrade.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
@@ -12,7 +12,7 @@ from datetime import datetime
 from argparse import ArgumentParser
 from pl_modules.data_module import CMambaDataModule
 from data_utils.data_transforms import DataTransform
-from utils.trade import buy_sell_vanilla, buy_sell_smart
+from utils.trade import get_trade_decision
 import warnings
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -52,6 +52,13 @@ def get_args():
         help="Path to config file.",
     )
     parser.add_argument(
+        "--model",
+        required=False,
+        type=str,
+        default='v2',
+        help="Path to model config file.",
+    )
+    parser.add_argument(
         '--use_volume', 
         default=False,   
         action='store_true',          
@@ -77,6 +84,11 @@ def get_args():
         default=False,   
         action='store_true',          
     )
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        default="BTC",
+    )
 
     args = parser.parse_args()
     return args
@@ -95,13 +107,11 @@ def init_dirs(args, date):
     txt_file = open(f'{path}/{date}.txt', 'w')
     return txt_file
 
-def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
-    arch_config = io_tools.load_config_from_yaml('configs/models/archs.yaml')
-    model_arch = config.get('model')
-    model_config_path = f'{ROOT}/configs/models/{arch_config.get(model_arch)}'
+def load_model(config, model_path, ckpt_path, feature_names=None, skip_revin=None):
+    model_config_path = f'{ROOT}/configs/models/CryptoMamba/{model_path}.yaml'
     model_config = io_tools.load_config_from_yaml(model_config_path)
     normalize = model_config.get('normalize', False)
-    # [新增] 注入参数
+    # 注入参数
     if feature_names is not None:
         model_config.get('params')['feature_names'] = feature_names
     if skip_revin is not None:
@@ -109,6 +119,7 @@ def load_model(config, ckpt_path, feature_names=None, skip_revin=None):
     model_class = io_tools.get_obj_from_str(model_config.get('target'))
     model = model_class.load_from_checkpoint(ckpt_path, **model_config.get('params'),weights_only=False)
     model.cuda()
+    model.eval()
     return model, normalize
 
 @torch.no_grad()
@@ -160,24 +171,16 @@ if __name__ == "__main__":
     feature_names += config.get('additional_features', [])
     skip_revin_list = config.get('skip_revin', [])
 
-    # [修改] 传递参数
-    model, normalize = load_model(config, args.ckpt_path, feature_names, skip_revin_list)
-    # model, normalize = load_model(config, args.ckpt_path)
+    print(f"Features for inference: {feature_names}")
+
+    # 2. 加载模型
+    model_path = args.model
+    model, normalize = load_model(config, model_path, args.ckpt_path, feature_names, skip_revin_list)
 
     data = pd.read_csv(args.data_path)
     if 'Date' in data.keys():
         data['Timestamp'] = [float(time.mktime(datetime.strptime(x, "%Y-%m-%d").timetuple())) for x in data['Date']]
     data = data.sort_values(by='Timestamp').reset_index()
-
-    # data_module = CMambaDataModule(data_config,
-    #                                train_transform=train_transform,
-    #                                val_transform=val_transform,
-    #                                test_transform=test_transform,
-    #                                batch_size=1,
-    #                                distributed_sampler=False,
-    #                                num_workers=1,
-    #                                normalize=normalize,
-    #                                )
     
     # end_date = "2024-27-10"
     if args.date is None:
@@ -189,11 +192,50 @@ if __name__ == "__main__":
     data = data[data['Timestamp'] < end_ts]
     data = data[data['Timestamp'] >= start_ts - 60 * 60]
 
+    # ============== 【新增代码开始】 数据完整性与连续性检查 ==============
+    required_days = 14 # 根据你的 window_size 设定
+    # 考虑到数据处理可能包含 target 列，这里确保至少有 window_size 行
+    if len(data) < required_days:
+        raise ValueError(f"[Error] Data Missing! Expected at least {required_days} days, but got {len(data)}. "
+                         f"Date range found: {pd.to_datetime(data['Timestamp'].min(), unit='s')} to {pd.to_datetime(data['Timestamp'].max(), unit='s')}")
+
+    # 按时间排序确保万无一失
+    data = data.sort_values(by='Timestamp').reset_index(drop=True)
+    
+    # 截取最后 window_size 行用于预测（Mamba通常使用最后的窗口进行预测）
+    # 注意：这里取决于你的模型是否需要 extra data，通常取最后14行
+    inference_data = data.iloc[-required_days:].copy()
+    
+    # 1. 检查最后一条数据是否是“昨天”
+    last_ts = inference_data['Timestamp'].iloc[-1]
+    # end_ts 是预测当天的 00:00:00 (或基于csv的时间)，last_ts 应该是 end_ts - 24h
+    # 允许 1小时的误差以应对时区或数据记录偏差
+    expected_last_ts = end_ts - 24 * 60 * 60
+    if abs(last_ts - expected_last_ts) > 3600:
+        last_date_str = datetime.fromtimestamp(last_ts).strftime("%Y-%m-%d")
+        expected_str = datetime.fromtimestamp(expected_last_ts).strftime("%Y-%m-%d")
+        raise ValueError(f"[Error] Data Gap! You are predicting for {args.date}, so the latest data needed is {expected_str}, "
+                         f"but the latest available data is {last_date_str}. Missing the day before prediction?")
+
+    # 2. 检查连续性 (Diff 应该等于 86400秒)
+    timestamps = inference_data['Timestamp'].values
+    time_diffs = np.diff(timestamps)
+    # 允许少许误差 (e.g. 60秒)，正常应该是 86400
+    if not np.all((time_diffs >= 86400 - 60) & (time_diffs <= 86400 + 60)):
+        # 找出断档的具体位置
+        gap_indices = np.where((time_diffs < 86340) | (time_diffs > 86460))[0]
+        bad_date_1 = datetime.fromtimestamp(timestamps[gap_indices[0]]).strftime("%Y-%m-%d")
+        bad_date_2 = datetime.fromtimestamp(timestamps[gap_indices[0]+1]).strftime("%Y-%m-%d")
+        raise ValueError(f"[Error] Non-consecutive data detected between {bad_date_1} and {bad_date_2}. "
+                         "Mamba-SSM requires strictly consecutive time steps.")
+
+    print(f"Data Integrity Check Passed: {required_days} consecutive days found ending {datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d')}")
+    # ============== 【新增代码结束】 ====================================
+
     txt_file = init_dirs(args, pred_date)
     
     
     features = {}
-    # key_list = ['Timestamp', 'Open', 'High', 'Low', 'Close']
     key_list = ['Open', 'High', 'Low', 'Close']
     if use_volume:
         key_list.append('Volume')
@@ -237,9 +279,6 @@ if __name__ == "__main__":
             pred = float(pred_tensor.cpu()[0])  # Move back to CPU if needed
         else:
             pred = float(pred)
-
-    # print('')
-    # print_and_write(txt_file, f'Prediction date: {pred_date}\nPrediction: {round(pred, 2)}\nToday value: {round(today, 2)}')
     
     # 6. 价格还原
     pred_price = pred
@@ -254,10 +293,6 @@ if __name__ == "__main__":
     pct_change = (pred_price - today_price) / today_price * 100
     print_and_write(txt_file, f'Predicted Change: {round(pct_change, 2)}%')
 
-    # 7. 实战交易逻辑 (Real-World Trading Logic)
-    print_and_write(txt_file, '-' * 30)
-    print_and_write(txt_file, '>>> TRADING SIGNAL ANALYSIS <<<')
-
     # A. 计算 Smart Factor (x)
     # x = |Pred - Today| / (Today * Risk%)
     risk_percent = args.risk / 100.0  # e.g., 2.2% -> 0.022
@@ -268,36 +303,16 @@ if __name__ == "__main__":
     if diff_threshold == 0: diff_threshold = 1e-8
     x_factor = abs(raw_diff) / diff_threshold
 
-    # 设定两个门槛
-    X_STRONG_THRESHOLD = 0.5
-    X_WEAK_THRESHOLD = 0.2
-
-    # print_and_write(txt_file, f'Risk Config (MAPE): {args.risk}%')
-    print_and_write(txt_file, f'Signal Strength (x): {round(x_factor, 2)}')
-
-    trade_mode = None
+    print_and_write(txt_file, f'Signal Strength (x): {x_factor}')
     direction = "LONG" if pred_price > today_price else "SHORT"
-    
-    # 决策逻辑分支
-    if x_factor >= X_STRONG_THRESHOLD:
-        trade_mode = 'aggressive'
-        print_and_write(txt_file, f'[DECISION]: OPEN {direction} (STRONG SIGNAL)')
-    elif x_factor >= X_WEAK_THRESHOLD:
-        trade_mode = 'conservative'
-        print_and_write(txt_file, f'[DECISION]: OPEN {direction} (WEAK SIGNAL - SNIPER MODE)')
-    else:
-        print_and_write(txt_file, f'[DECISION]: WAIT / NO TRADE')
 
-    # 执行计算
-    if trade_mode and not args.paper_trading:
-        pass
+    decision, mode, final_direction = get_trade_decision(args.symbol, x_factor, direction)
+    # 输出策略
+    if decision == "WAIT":
+        print_and_write(txt_file, f'[SIGNAL]: NO TRADE') 
     else:
         print_and_write(txt_file, '-' * 20)
-        print_and_write(txt_file, f'{direction}')
+        print_and_write(txt_file, f'{mode}')
         print_and_write(txt_file, '-' * 20)
-
-    
-
-    
-
-
+        print_and_write(txt_file, f'{final_direction}')
+        print_and_write(txt_file, '-' * 20)
