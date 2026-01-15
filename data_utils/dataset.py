@@ -4,6 +4,7 @@ import torch
 import time
 import random
 import pandas as pd
+import numpy as np
 from tqdm import tqdm
 from pathlib import Path
 from utils import io_tools
@@ -27,6 +28,23 @@ class CMambaDataset(torch.utils.data.Dataset):
         self.window_size = window_size
         self.data_module = None  # 添加
         self.split = split  # 新增，判断 train
+
+        # === 新增检查 ===
+        # 检查数据是否连续。如果不连续，iloc 切片训练就是错误的。
+        if len(self.data) > 1:
+            # 假设数据主要是日线，间隔86400。如果是小时线需调整。
+            # 这里简单判断：如果最大间隔超过了最小间隔的1.1倍，说明有断档
+            timestamps = self.data['Timestamp'].values
+            diffs = timestamps[1:] - timestamps[:-1]
+            if len(diffs) > 0:
+                min_diff = np.min(diffs)
+                max_diff = np.max(diffs)
+                if max_diff > min_diff * 1.05: # 允许5%误差
+                    print(f"Warning: {split} split data is not continuous! Max gap: {max_diff}, Min gap: {min_diff}")
+                    # 在训练集严格报错
+                    if split == 'train':
+                         raise ValueError(f"Training data contains time gaps (missing days). Fix data before training.")
+        # ===============
             
         print('{} data points loaded as {} split.'.format(len(self), split))
 
@@ -70,8 +88,14 @@ class DataConverter:
         for i in tqdm(range(start, stop - self.jumps // 60 + 1, self.jumps)):
             high, low, open, close, vol = self.merge_data(data, i, self.jumps)
             additional_features = self.merge_additional(data, i, self.jumps)
+
             if high is None:
-                continue
+           # === 修改开始：不仅 continue，还要报错或记录 ===
+                # 方案 A: 严格模式 - 直接报错停止训练
+                missing_date = datetime.fromtimestamp(i).strftime("%Y-%m-%d")
+                raise ValueError(f"[Data Error] Missing data for timestamp {i} ({missing_date}). "
+                                 f"Cannot train time-series model with gaps. Please fix the CSV.")             
+            
             new_df.get('Timestamp').append(i)
             new_df.get('High').append(high)
             new_df.get('Low').append(low)
@@ -82,6 +106,14 @@ class DataConverter:
                 new_df.get(key).append(additional_features.get(key))
 
         df = pd.DataFrame(new_df)
+        # 双重检查：确保整个 dataframe 的时间戳是连续的
+        if len(df) > 1:
+            timestamps = df['Timestamp'].values
+            diffs = np.diff(timestamps)
+            # 检查是否有任何间隔不等于 jumps (通常是86400)
+            if not np.allclose(diffs, self.jumps, atol=60):
+                 raise ValueError(f"[Data Error] Generated DataFrame has time gaps! "
+                                  f"Ensure source CSV covers every single day from {self.start_date} to {self.end_date}.")
 
         return df
 
