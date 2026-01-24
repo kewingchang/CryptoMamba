@@ -27,7 +27,7 @@ def get_grid_signal(abs_chg, sym, rng):
     else:
         return False
 
-def get_reference_price(df, target_idx, target_date):
+def get_reference_price(df, target_idx, target_date_str):
     """
     获取计算用的参考价格 (Reference Price)
     逻辑: 优先用 Open，如果没有，则用 last_close
@@ -42,7 +42,7 @@ def get_reference_price(df, target_idx, target_date):
     if 'last_close' in df.columns:
         val = df.at[target_idx, 'last_close']
         if pd.notna(val) and float(val) > 0:
-            print(f"[{target_date}] 'Open' price missing. Using 'last_close' ({val}) as reference.")
+            print(f"[{target_date_str}] 'Open' price missing. Using 'last_close' ({val}) as reference.")
             return float(val)
             
     return None
@@ -50,7 +50,7 @@ def get_reference_price(df, target_idx, target_date):
 def main():
     parser = argparse.ArgumentParser(description="Calculate Grid Signal for a specific date.")
     parser.add_argument('--data_path', type=str, default='/content/data/Pred-BTC-USD.csv', help='Path to the prediction CSV file')
-    parser.add_argument('--date', type=str, required=True, help='Target date (e.g., 2026/1/5)')
+    parser.add_argument('--date', type=str, required=True, help='Target date (e.g., 2026/1/5 or 2026-01-05)')
     
     args = parser.parse_args()
     
@@ -65,23 +65,39 @@ def main():
         print(f"Error reading CSV: {e}")
         sys.exit(1)
         
-    # 清理输入日期字符串
-    target_date = args.date.strip()
+    # 2. 智能日期匹配逻辑
+    target_date_input = args.date.strip()
     
-    # 2. 查找目标行
-    # 将 Date 列转为 string 并去除空格进行匹配
-    matches = df.index[df['Date'].astype(str).str.strip() == target_date].tolist()
+    try:
+        # A. 将命令行输入的日期标准化 (去除时间，统一格式)
+        target_dt = pd.to_datetime(target_date_input).normalize()
+        
+        # B. 将 DataFrame 中的 Date 列临时转换为 datetime 对象进行比较
+        # errors='coerce' 会将无法解析的日期变为 NaT，防止报错
+        file_dates = pd.to_datetime(df['Date'], errors='coerce').dt.normalize()
+        
+        # C. 查找匹配的索引
+        matches = df.index[file_dates == target_dt].tolist()
+        
+    except Exception as e:
+        print(f"Error parsing dates: {e}")
+        print(f"Input date: {target_date_input}")
+        sys.exit(1)
     
     if not matches:
-        print(f"Info: Date '{target_date}' not found in {args.data_path}. No calculation performed.")
+        print(f"Info: Date '{target_date_input}' not found in {args.data_path}.")
+        # 调试信息：打印文件中的前几个日期格式，方便排查
+        print(f"First few dates in file: {df['Date'].head(3).tolist()}")
         sys.exit(0)
         
     target_idx = matches[0]
-    print(f"Found record for {target_date} at index {target_idx}.")
+    # 获取 CSV 中原始的日期字符串，用于打印显示
+    original_date_str = str(df.at[target_idx, 'Date'])
+    print(f"Found record for input '{target_date_input}' (File says: '{original_date_str}') at index {target_idx}.")
     
     # 3. 准备数据
     try:
-        # 必须存在的列 (High-q0.8, Low-q0.2, pred_chg%)
+        # 必须存在的列
         req_cols = ['High-q0.8', 'Low-q0.2', 'pred_chg%']
         for col in req_cols:
             if col not in df.columns:
@@ -93,10 +109,10 @@ def main():
         pred_chg = float(df.at[target_idx, 'pred_chg%'])
         
         # 获取参考价格 (Open 或 last_close)
-        ref_price = get_reference_price(df, target_idx, target_date)
+        ref_price = get_reference_price(df, target_idx, original_date_str)
         
         if ref_price is None:
-            print(f"Error: Neither 'Open' nor 'last_close' columns provided (or are empty) for date {target_date}.")
+            print(f"Error: Neither 'Open' nor 'last_close' columns provided (or are empty) for date {original_date_str}.")
             sys.exit(1)
             
     except ValueError as e:
@@ -109,7 +125,6 @@ def main():
     down_space = ref_price - low_q
     
     # 计算 symmetry
-    # 加上 1e-9 防止完全为 0
     numerator = min(up_space, down_space)
     denominator = max(up_space, down_space)
     if denominator == 0:
@@ -128,7 +143,7 @@ def main():
     signal_int = 1 if signal else 0
     
     print("-" * 40)
-    print(f"Calculation Results for {target_date}:")
+    print(f"Calculation Results for {original_date_str}:")
     print(f"  Reference Price: {ref_price}")
     print(f"  High-q0.8:       {high_q}")
     print(f"  Low-q0.2:        {low_q}")
