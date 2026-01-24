@@ -77,6 +77,13 @@ def get_args():
         default=2,
         type=float,
     )
+    # 预测结果保存路径
+    parser.add_argument(
+        "--pred_path",
+        type=str,
+        default=None,
+        help="Path to save prediction csv.",
+    )
 
     args = parser.parse_args()
     return args
@@ -152,6 +159,7 @@ if __name__ == "__main__":
 
     # 价格余量
     price_margin = 0
+    hl_prefix = ""
 
     # 特征工程 (Feature Engineering) 
     # 必须与 dataset.py 中的逻辑保持一致    
@@ -160,12 +168,14 @@ if __name__ == "__main__":
     if 'log_return_low' in feature_names:
         data['log_return_low'] = np.log(data['Low'] + 1e-8) - np.log(data['Open'] + 1e-8)
         price_margin = 3
+        hl_prefix = "Low"
 
     # 新增处理 log_return_high (适配 High 模型)
     if 'log_return_high' in feature_names:
         # ln(High / Open)
         data['log_return_high'] = np.log(data['High'] + 1e-8) - np.log(data['Open'] + 1e-8)
         price_margin = -3
+        hl_prefix = "High"
 
     # 填充 NaN
     data = data.fillna(0.0).replace([np.inf, -np.inf], 0.0)
@@ -235,6 +245,9 @@ if __name__ == "__main__":
     print_and_write(txt_file, f'Ref Price (Last Close): {round(last_close_price, 2)}')
     print_and_write(txt_file, '-'*30)
 
+    # 准备数据字典
+    new_row = {'Date': pred_date}
+
     for i, q in enumerate(quantiles):
         # 这里的还原公式是通用的，但变量名在 High 模型下也是 log_return_high
         # Price = Open * exp(predicted_log_return)
@@ -247,4 +260,47 @@ if __name__ == "__main__":
         if q == 0.05 or q == 0.95: price_margin_q = 0
         print_and_write(txt_file, f'{label:<15}: {int(price_level) + price_margin_q} (Return: {pred_vals[i]*100:.2f}%)')
 
+        # 保存数据
+        qkey = f"{hl_prefix}-q{q}"
+        new_row[qkey] = int(price_level) + price_margin_q
+
     print_and_write(txt_file, '-'*30)
+
+    # 保存预测结果
+    if args.pred_path:        
+        # 确保父目录存在
+        parent_dir = os.path.dirname(args.pred_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir)
+
+        if os.path.exists(args.pred_path):
+            try:
+                # 读取现有csv
+                df_existing = pd.read_csv(args.pred_path)
+                
+                # 确保 Date 列为字符串以便比较
+                df_existing['Date'] = df_existing['Date'].astype(str)
+                
+                # 检查日期是否存在
+                if pred_date in df_existing['Date'].values:
+                    # 更新该行
+                    idx = df_existing.index[df_existing['Date'] == pred_date].tolist()[0]
+                    for col, val in new_row.items():
+                        df_existing.at[idx, col] = val
+                    print(f"Updated entry for {pred_date} in {args.pred_path}")
+                else:
+                    # 追加新行
+                    df_new_row = pd.DataFrame([new_row])
+                    df_existing = pd.concat([df_existing, df_new_row], ignore_index=True)
+                    print(f"Appended entry for {pred_date} to {args.pred_path}")
+                
+                # 保存
+                df_existing.to_csv(args.pred_path, index=False)
+                
+            except Exception as e:
+                print(f"[Warning] Failed to update CSV: {e}")
+        else:
+            # 新建 CSV
+            df_new = pd.DataFrame([new_row])
+            df_new.to_csv(args.pred_path, index=False)
+            print(f"Created new prediction file at {args.pred_path}")
