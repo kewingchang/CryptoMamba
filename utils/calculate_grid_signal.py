@@ -152,6 +152,9 @@ def main():
     print(f"  > Proj Range:    {proj_range:.4f}%")
     print(f"  > Grid Signal:   {signal_int} (1=ON, 0=OFF)")
     print("-" * 40)
+    if signal_int == 1:
+        print("ON")
+        print("-" * 40)
     
     # 6. 回写数据
     df.at[target_idx, 'symmetry'] = symmetry
