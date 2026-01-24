@@ -89,6 +89,13 @@ def get_args():
         type=str,
         default="BTC",
     )
+    # 预测结果保存路径
+    parser.add_argument(
+        "--pred_path",
+        type=str,
+        default=None,
+        help="Path to save prediction csv.",
+    )
 
     args = parser.parse_args()
     return args
@@ -316,3 +323,53 @@ if __name__ == "__main__":
         print_and_write(txt_file, '-' * 20)
         print_and_write(txt_file, f'{final_direction}')
         print_and_write(txt_file, '-' * 20)
+    
+    # 保存预测结果
+    if args.pred_path:
+        # 准备数据字典
+        new_row = {
+            'Date': pred_date,  # 使用格式化后的预测日期 (args.date/计算值)
+            'last_close': today_price,
+            'pred': pred_price,
+            'pred_chg%': pct_change,
+            'x_factor': x_factor,
+            'direction': direction, # 原始方向 (LONG/SHORT)
+            'decision': decision    # 决策结果 (WAIT/TRADE)
+        }
+        
+        # 确保父目录存在
+        parent_dir = os.path.dirname(args.pred_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir)
+
+        if os.path.exists(args.pred_path):
+            try:
+                # 读取现有csv
+                df_existing = pd.read_csv(args.pred_path)
+                
+                # 确保 Date 列为字符串以便比较
+                df_existing['Date'] = df_existing['Date'].astype(str)
+                
+                # 检查日期是否存在
+                if pred_date in df_existing['Date'].values:
+                    # 更新该行
+                    idx = df_existing.index[df_existing['Date'] == pred_date].tolist()[0]
+                    for col, val in new_row.items():
+                        df_existing.at[idx, col] = val
+                    print(f"Updated entry for {pred_date} in {args.pred_path}")
+                else:
+                    # 追加新行
+                    df_new_row = pd.DataFrame([new_row])
+                    df_existing = pd.concat([df_existing, df_new_row], ignore_index=True)
+                    print(f"Appended entry for {pred_date} to {args.pred_path}")
+                
+                # 保存
+                df_existing.to_csv(args.pred_path, index=False)
+                
+            except Exception as e:
+                print(f"[Warning] Failed to update CSV: {e}")
+        else:
+            # 新建 CSV
+            df_new = pd.DataFrame([new_row])
+            df_new.to_csv(args.pred_path, index=False)
+            print(f"Created new prediction file at {args.pred_path}")
