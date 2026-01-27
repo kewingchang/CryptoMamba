@@ -4,27 +4,49 @@ import argparse
 import sys
 import os
 
-def get_grid_signal(abs_chg, sym, rng):
+def get_grid_signal(abs_chg, sym, rng, symbol):
     """
-    核心策略逻辑: 黄金网格过滤器 (预测端)
+    核心策略逻辑: 黄金网格过滤器
+    根据 symbol (BTC/ETH) 区分不同的统计阈值
     """
-    # 1. 波动率过滤 (Sweet Spot: 3% - 6%)
-    if not (3.0 <= rng <= 6.0):
-        return False
+    
+    # ==========================================
+    # 策略配置 (基于 2025-01-27 统计数据)
+    # ==========================================
+    
+    if symbol == 'BTC':
+        # --- BTC 黄金法则 ---
+        # 1. 动量: < 0.4%
+        if abs_chg > 0.4: return False
         
-    # 2. 动量过滤 (Sweet Spot: < 0.4%)
-    if abs_chg > 0.4:
-        return False
+        # 2. 波动: 3.0% - 6.0%
+        if not (3.0 <= rng <= 6.0): return False
         
-    # 3. 对称性过滤 (Trap Avoidance)
-    # 极高胜率区: >= 0.9
-    # 良好胜率区: 0.5 - 0.8
-    # 死亡陷阱区: 0.8 - 0.9 (剔除)
-    if sym >= 0.9:
-        return True
-    elif 0.5 <= sym <= 0.8:
-        return True
+        # 3. 对称性: 完美(>0.9) 或 一般(0.5-0.8)，避开 0.8-0.9 陷阱
+        if sym >= 0.9: return True
+        elif 0.5 <= sym <= 0.8: return True
+        else: return False
+
+    elif symbol == 'ETH':
+        # --- ETH 黄金法则 ---
+        # 1. 动量: < 0.4% (与 BTC 一致)
+        if abs_chg > 0.4: return False
+        
+        # 2. 波动: 4.0% - 6.0%
+        # 数据显示: 3-4% 胜率仅 33% (ETH需要更大波动门槛), 4-6% 胜率极高
+        if not (4.0 <= rng <= 6.0): return False
+        
+        # 3. 对称性: 0.6 - 0.8
+        # 数据显示: >0.9 胜率仅 50% (ETH完美对称是陷阱), 0.8-0.9 仅及格.
+        # 只有 0.6-0.8 是 >68% 的高胜率区
+        if 0.6 <= sym <= 0.8: return True
+        else: return False
+        
     else:
+        # 默认逻辑 (保守策略，取交集)
+        if abs_chg > 0.4: return False
+        if not (4.0 <= rng <= 6.0): return False
+        if 0.6 <= sym <= 0.8: return True
         return False
 
 def get_reference_price(df, target_idx, target_date_str):
@@ -81,9 +103,11 @@ def calculate_ground_truth(df, target_idx):
         return None, None
 
 def main():
-    parser = argparse.ArgumentParser(description="Calculate Grid Signal for a specific date.")
-    parser.add_argument('--data_path', type=str, default='/content/data/Pred-BTC-USD.csv', help='Path to the prediction CSV file')
-    parser.add_argument('--date', type=str, required=True, help='Target date (e.g., 2026/1/5 or 2026-01-05)')
+    parser = argparse.ArgumentParser(description="Calculate Grid Signal.")
+    parser.add_argument('--data_path', type=str, default='/content/data/Pred-BTC-USD.csv')
+    parser.add_argument('--date', type=str, required=True)
+    # 新增 symbol 参数，默认 BTC
+    parser.add_argument('--symbol', type=str, default='BTC', choices=['BTC', 'ETH'], help='Symbol name (BTC or ETH)')
     
     args = parser.parse_args()
     
@@ -155,7 +179,9 @@ def main():
     proj_range = (high_q - low_q) / ref_price * 100
     
     abs_chg = abs(pred_chg)
-    signal = get_grid_signal(abs_chg, symmetry, proj_range)
+    
+    # 获取信号 (传入 symbol)
+    signal = get_grid_signal(abs_chg, symmetry, proj_range, args.symbol)
     signal_int = 1 if signal else 0
     
     # 回写预测数据
