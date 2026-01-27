@@ -373,6 +373,14 @@ if __name__ == "__main__":
                     # 追加新行
                     df_new_row = pd.DataFrame([new_row])
                     df_existing = pd.concat([df_existing, df_new_row], ignore_index=True)
+                    # --- 按日期降序排序 (近 -> 远) ---
+                    try:
+                        # 创建临时列用于排序，避免破坏原Date格式
+                        df_existing['temp_sort_date'] = pd.to_datetime(df_existing['Date'])
+                        df_existing = df_existing.sort_values(by='temp_sort_date', ascending=False).reset_index(drop=True)
+                        df_existing = df_existing.drop(columns=['temp_sort_date'])
+                    except Exception as e:
+                        print(f"[Warning] Date sorting failed: {e}. Falling back to original order.")
                     print(f"Appended entry for {pred_date} to {args.pred_path}")
                 
                 # 保存
