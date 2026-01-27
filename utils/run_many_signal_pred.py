@@ -12,7 +12,10 @@ def parse_args():
     # 1. 命令行参数定义
     parser.add_argument('--data_path', type=str, default='BTC-USD.csv', help='Input CSV file path')
     parser.add_argument('--clear_log', action='store_true', help='Clear log file before starting')
-
+    parser.add_argument('--start_date', type=str, default='2025-12-1', help='Start date (YYYY-MM-DD)')
+    parser.add_argument('--end_date', type=str, default='2026-1-5', help='End date (YYYY-MM-DD)')
+    parser.add_argument('--log', type=str, default='/content/data/log_pred.txt', help='Log file path')
+    
     return parser.parse_args()
 
 def run_inference(args):
