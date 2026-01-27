@@ -15,6 +15,7 @@ def parse_args():
     parser.add_argument('--start_date', type=str, default='2025-12-1', help='Start date (YYYY-MM-DD)')
     parser.add_argument('--end_date', type=str, default='2026-1-5', help='End date (YYYY-MM-DD)')
     parser.add_argument('--log', type=str, default='/content/data/log_pred.txt', help='Log file path')
+    parser.add_argument('--symbol', type=str, default='BTC', choices=['BTC', 'ETH'], help='Symbol name (BTC or ETH)')
     
     return parser.parse_args()
 
@@ -43,6 +44,7 @@ def run_inference(args):
         cmd = (
             f"python utils/calculate_grid_signal.py "
             f"--data_path {args.data_path} "
+            f"--symbol {args.symbol} "
             f"--date {date_str} >> {args.log} 2>&1"
         )
         
