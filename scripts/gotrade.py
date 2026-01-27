@@ -258,11 +258,13 @@ if __name__ == "__main__":
         # 止损不调整价格
         price_margin_q = price_margin
         if q == 0.05 or q == 0.95: price_margin_q = 0
+        # 为方便下单，打印的值均取整，且有+-3浮动
         print_and_write(txt_file, f'{label:<15}: {int(price_level) + price_margin_q} (Return: {pred_vals[i]*100:.2f}%)')
 
         # 保存数据
         qkey = f"{hl_prefix}-q{q}"
-        new_row[qkey] = int(price_level) + price_margin_q
+        # csv中保存原值
+        new_row[qkey] = price_level
 
     print_and_write(txt_file, '-'*30)
 
