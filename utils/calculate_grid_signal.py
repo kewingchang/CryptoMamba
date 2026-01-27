@@ -6,7 +6,7 @@ import os
 
 def get_grid_signal(abs_chg, sym, rng):
     """
-    核心策略逻辑: 黄金网格过滤器
+    核心策略逻辑: 黄金网格过滤器 (预测端)
     """
     # 1. 波动率过滤 (Sweet Spot: 3% - 6%)
     if not (3.0 <= rng <= 6.0):
@@ -47,6 +47,39 @@ def get_reference_price(df, target_idx, target_date_str):
             
     return None
 
+def calculate_ground_truth(df, target_idx):
+    """
+    计算实际是否震荡 (Ground Truth)
+    前提: 必须有 Open, High, Low, Close 数据
+    """
+    req_cols = ['Open', 'High', 'Low', 'Close']
+    for col in req_cols:
+        if col not in df.columns or pd.isna(df.at[target_idx, col]):
+            return None, None # 数据不全，无法计算
+
+    try:
+        open_val = float(df.at[target_idx, 'Open'])
+        high_val = float(df.at[target_idx, 'High'])
+        low_val = float(df.at[target_idx, 'Low'])
+        close_val = float(df.at[target_idx, 'Close'])
+        
+        body_size = abs(close_val - open_val)
+        # 加上极小值防止除以0
+        total_range = abs(high_val - low_val)
+        if total_range == 0:
+            total_range = 1e-9
+
+        real_body_ratio = body_size / total_range
+        
+        # 判定逻辑: 实体占比 < 0.5 视为震荡
+        is_choppy = 1 if real_body_ratio < 0.5 else 0
+        
+        return real_body_ratio, is_choppy
+        
+    except Exception as e:
+        print(f"Error calculating ground truth: {e}")
+        return None, None
+
 def main():
     parser = argparse.ArgumentParser(description="Calculate Grid Signal for a specific date.")
     parser.add_argument('--data_path', type=str, default='/content/data/Pred-BTC-USD.csv', help='Path to the prediction CSV file')
@@ -69,35 +102,25 @@ def main():
     target_date_input = args.date.strip()
     
     try:
-        # A. 将命令行输入的日期标准化 (去除时间，统一格式)
+        # 统一转换为 datetime 对象进行比较
         target_dt = pd.to_datetime(target_date_input).normalize()
-        
-        # B. 将 DataFrame 中的 Date 列临时转换为 datetime 对象进行比较
-        # errors='coerce' 会将无法解析的日期变为 NaT，防止报错
         file_dates = pd.to_datetime(df['Date'], errors='coerce').dt.normalize()
-        
-        # C. 查找匹配的索引
         matches = df.index[file_dates == target_dt].tolist()
         
     except Exception as e:
         print(f"Error parsing dates: {e}")
-        print(f"Input date: {target_date_input}")
         sys.exit(1)
     
     if not matches:
         print(f"Info: Date '{target_date_input}' not found in {args.data_path}.")
-        # 调试信息：打印文件中的前几个日期格式，方便排查
-        print(f"First few dates in file: {df['Date'].head(3).tolist()}")
         sys.exit(0)
         
     target_idx = matches[0]
-    # 获取 CSV 中原始的日期字符串，用于打印显示
     original_date_str = str(df.at[target_idx, 'Date'])
-    print(f"Found record for input '{target_date_input}' (File says: '{original_date_str}') at index {target_idx}.")
+    print(f"Found record for '{target_date_input}' at index {target_idx}.")
     
-    # 3. 准备数据
+    # 3. 准备数据 (Signal 计算用)
     try:
-        # 必须存在的列
         req_cols = ['High-q0.8', 'Low-q0.2', 'pred_chg%']
         for col in req_cols:
             if col not in df.columns:
@@ -108,60 +131,77 @@ def main():
         low_q = float(df.at[target_idx, 'Low-q0.2'])
         pred_chg = float(df.at[target_idx, 'pred_chg%'])
         
-        # 获取参考价格 (Open 或 last_close)
         ref_price = get_reference_price(df, target_idx, original_date_str)
         
         if ref_price is None:
-            print(f"Error: Neither 'Open' nor 'last_close' columns provided (or are empty) for date {original_date_str}.")
+            print(f"Error: Reference price missing for {original_date_str}.")
             sys.exit(1)
             
     except ValueError as e:
         print(f"Error parsing numerical data: {e}")
         sys.exit(1)
         
-    # 4. 计算指标 (Symmetry & Proj_Range)
-    # 防止除以0
+    # 4. 计算预测信号 (Signal)
     up_space = high_q - ref_price
     down_space = ref_price - low_q
     
-    # 计算 symmetry
     numerator = min(up_space, down_space)
     denominator = max(up_space, down_space)
     if denominator == 0:
-        symmetry = 0.0 # 异常情况，上下空间都为0
+        symmetry = 0.0
     else:
         symmetry = numerator / denominator
     
-    # 计算 proj_range (%)
     proj_range = (high_q - low_q) / ref_price * 100
     
-    # 5. 获取信号
     abs_chg = abs(pred_chg)
     signal = get_grid_signal(abs_chg, symmetry, proj_range)
-    
-    # 转换信号为整数 1 或 0
     signal_int = 1 if signal else 0
     
-    print("-" * 40)
-    print(f"Calculation Results for {original_date_str}:")
-    print(f"  Reference Price: {ref_price}")
+    # 回写预测数据
+    df.at[target_idx, 'symmetry'] = symmetry
+    df.at[target_idx, 'proj_range'] = proj_range
+    df.at[target_idx, 'grid_signal'] = signal_int
+    
+    print("-" * 50)
+    print(f"PREDICTION Results for {original_date_str}:")
     print(f"  High-q0.8:       {high_q}")
     print(f"  Low-q0.2:        {low_q}")
     print(f"  pred_chg%:       {pred_chg}%")
     print(f"  > Symmetry:      {symmetry:.4f}")
     print(f"  > Proj Range:    {proj_range:.4f}%")
     print(f"  > Grid Signal:   {signal_int} (1=ON, 0=OFF)")
-    print("-" * 40)
-    if signal_int == 1:
-        print("ON")
-        print("-" * 40)
     
-    # 6. 回写数据
-    df.at[target_idx, 'symmetry'] = symmetry
-    df.at[target_idx, 'proj_range'] = proj_range
-    df.at[target_idx, 'grid_signal'] = signal_int
+    # 5. 计算 Ground Truth (如果有 OHLC)
+    real_body_ratio, is_actual = calculate_ground_truth(df, target_idx)
     
-    # 保存 CSV
+    if is_actual is not None:
+        # 回写实际数据
+        df.at[target_idx, 'real_body_ratio'] = real_body_ratio
+        df.at[target_idx, 'is_actual_choppy'] = is_actual
+        
+        print("-" * 50)
+        print(f"ACTUAL (Backtest) Results:")
+        print(f"  Open:            {df.at[target_idx, 'Open']}")
+        print(f"  Close:           {df.at[target_idx, 'Close']}")
+        print(f"  High:            {df.at[target_idx, 'High']}")
+        print(f"  Low:             {df.at[target_idx, 'Low']}")
+        print(f"  > Body Ratio:    {real_body_ratio:.4f}")
+        print(f"  > Actual Choppy: {is_actual} (1=YES, 0=NO)")
+        
+        # 简单打印是否预测正确
+        if signal_int == 1:
+            res_str = "SUCCESS (TP)" if is_actual == 1 else "FAIL (FP)"
+            print(f"  > Result:        {res_str}")
+        else:
+            print(f"  > Result:        No Signal (Skipped)")
+    else:
+        print("-" * 50)
+        print("Info: OHLC data missing or incomplete. Skipping Actual Choppy calculation.")
+
+    print("-" * 50)
+
+    # 6. 保存 CSV
     try:
         df.to_csv(args.data_path, index=False)
         print(f"Successfully updated {args.data_path}")
