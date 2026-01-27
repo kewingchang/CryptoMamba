@@ -89,7 +89,7 @@ def get_args():
         type=str,
         default="BTC",
     )
-    # [新增] 参数：预测结果保存路径
+    # 预测结果保存路径
     parser.add_argument(
         "--pred_path",
         type=str,
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     data = data[data['Timestamp'] < end_ts]
     data = data[data['Timestamp'] >= start_ts - 60 * 60]
 
-    # ============== 【新增代码开始】 数据完整性与连续性检查 ==============
+    # ============== 数据完整性与连续性检查 ==============
     required_days = 14 # 根据你的 window_size 设定
     # 考虑到数据处理可能包含 target 列，这里确保至少有 window_size 行
     if len(data) < required_days:
@@ -237,7 +237,6 @@ if __name__ == "__main__":
                          "Mamba-SSM requires strictly consecutive time steps.")
 
     print(f"Data Integrity Check Passed: {required_days} consecutive days found ending {datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d')}")
-    # ============== 【新增代码结束】 ====================================
 
     txt_file = init_dirs(args, pred_date)
     
@@ -324,15 +323,15 @@ if __name__ == "__main__":
         print_and_write(txt_file, f'{final_direction}')
         print_and_write(txt_file, '-' * 20)
     
-    # ================= [新增] 保存 CSV 逻辑 =================
+    # =================  保存 CSV 逻辑 =================
     if args.pred_path:
         # 准备数据字典
         new_row = {
             'Date': pred_date,  # 使用格式化后的预测日期
-            'last_close': round(today_price, 4),
-            'pred': round(pred_price, 4),
-            'pred_chg%': round(pct_change, 4),
-            'x_factor': round(x_factor, 4),
+            'last_close': today_price,
+            'pred': pred_price,
+            'pred_chg%': pct_change,
+            'x_factor': x_factor,
             'direction': direction,
             'decision': decision
         }
@@ -354,7 +353,7 @@ if __name__ == "__main__":
                 if pred_date in df_existing['Date'].values:
                     # 找到对应行的索引
                     idx = df_existing.index[df_existing['Date'] == pred_date].tolist()[0]                    
-                    # --- [NEW LOGIC] 计算 change% ---
+                    # --- 计算 change% ---
                     # 如果 CSV 中存在 Open 和 Close 列，计算实际涨跌幅 change%
                     if 'Open' in df_existing.columns and 'Close' in df_existing.columns:
                         try:
