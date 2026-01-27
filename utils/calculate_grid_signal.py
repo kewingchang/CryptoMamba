@@ -171,6 +171,9 @@ def main():
     print(f"  > Symmetry:      {symmetry:.4f}")
     print(f"  > Proj Range:    {proj_range:.4f}%")
     print(f"  > Grid Signal:   {signal_int} (1=ON, 0=OFF)")
+    if signal_int == 1:
+        print("-" * 50)
+        print("ON")
     
     # 5. 计算 Ground Truth (如果有 OHLC)
     real_body_ratio, is_actual = calculate_ground_truth(df, target_idx)
@@ -197,7 +200,7 @@ def main():
             print(f"  > Result:        No Signal (Skipped)")
     else:
         print("-" * 50)
-        print("Info: OHLC data missing or incomplete. Skipping Actual Choppy calculation.")
+        # print("Info: OHLC data missing or incomplete. Skipping Actual Choppy calculation.")
 
     print("-" * 50)
 
