@@ -9,6 +9,8 @@ def get_grid_signal(abs_chg, sym, rng, symbol):
     核心策略逻辑: 黄金网格过滤器
     根据 symbol (BTC/ETH) 区分不同的统计阈值
     """
+
+    print(f"get_grid_signal for: {symbol}")
     
     # ==========================================
     # 策略配置 (基于 2025-01-27 统计数据)
