@@ -89,7 +89,7 @@ def get_args():
         type=str,
         default="BTC",
     )
-    # 预测结果保存路径
+    # [新增] 参数：预测结果保存路径
     parser.add_argument(
         "--pred_path",
         type=str,
@@ -324,17 +324,17 @@ if __name__ == "__main__":
         print_and_write(txt_file, f'{final_direction}')
         print_and_write(txt_file, '-' * 20)
     
-    # 保存预测结果
+    # ================= [新增] 保存 CSV 逻辑 =================
     if args.pred_path:
         # 准备数据字典
         new_row = {
-            'Date': pred_date,  # 使用格式化后的预测日期 (args.date/计算值)
-            'last_close': today_price,
-            'pred': pred_price,
-            'pred_chg%': pct_change,
-            'x_factor': x_factor,
-            'direction': direction, # 原始方向 (LONG/SHORT)
-            'decision': decision    # 决策结果 (WAIT/TRADE)
+            'Date': pred_date,  # 使用格式化后的预测日期
+            'last_close': round(today_price, 4),
+            'pred': round(pred_price, 4),
+            'pred_chg%': round(pct_change, 4),
+            'x_factor': round(x_factor, 4),
+            'direction': direction,
+            'decision': decision
         }
         
         # 确保父目录存在
@@ -352,8 +352,21 @@ if __name__ == "__main__":
                 
                 # 检查日期是否存在
                 if pred_date in df_existing['Date'].values:
+                    # 找到对应行的索引
+                    idx = df_existing.index[df_existing['Date'] == pred_date].tolist()[0]                    
+                    # --- [NEW LOGIC] 计算 change% ---
+                    # 如果 CSV 中存在 Open 和 Close 列，计算实际涨跌幅 change%
+                    if 'Open' in df_existing.columns and 'Close' in df_existing.columns:
+                        try:
+                            val_open = float(df_existing.at[idx, 'Open'])
+                            val_close = float(df_existing.at[idx, 'Close'])
+                            if val_open != 0:
+                                real_change = (val_close - val_open) / val_open * 100
+                                new_row['change%'] = round(real_change, 2)
+                        except (ValueError, TypeError):
+                            # 数据转换失败或为空则跳过
+                            pass
                     # 更新该行
-                    idx = df_existing.index[df_existing['Date'] == pred_date].tolist()[0]
                     for col, val in new_row.items():
                         df_existing.at[idx, col] = val
                     print(f"Updated entry for {pred_date} in {args.pred_path}")
