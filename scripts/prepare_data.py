@@ -11,15 +11,10 @@ import ta
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Add additional features to CSV file.')
 parser.add_argument('--ticker', type=str, required=True, help='Yahoo Finance Ticker (e.g., BTC-USD)')
-parser.add_argument('--save_to', type=str, default='data', help='Directory path to save the CSV file (default: data)')
+# 明确 save_to 接收完整文件路径
+parser.add_argument('--save_to', type=str, required=True, help='Full file path to save the CSV file (e.g., /content/data/data.csv)')
 
 args = parser.parse_args()
-
-# Determine filename and directory
-# 文件名固定为 Ticker.csv
-filename = f"{args.ticker}.csv"
-# 目录由参数指定
-output_dir = args.save_to
 
 # 1. Fetch Data from Yahoo Finance
 print(f"Fetching last 1 year of data for {args.ticker}...")
@@ -42,8 +37,10 @@ df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
 # 按日期升序排列 (Oldest to Newest) - 关键步骤
 df = df.sort_values('Date', ascending=True)
 
-# 3. 设置为索引
-df = df.set_index('Date')
+# --- 关键修改开始：解决 FutureWarning ---
+# 原代码在这里直接 set_index('Date')，导致后续 ta 库使用整数下标时报错。
+# 我们改为：先重置为标准的整数索引 (0, 1, 2...)，让 ta 库计算时“位置”和“索引”一致。
+df = df.reset_index(drop=True)
 
 # Ensure required columns exist
 required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
@@ -54,10 +51,9 @@ for col in required_cols:
 # --- 特征工程开始 ---
 
 # 1. 使用 ta.add_all_ta_features 一次性生成所有特征
-# 这样可以保证与你之前的数据完全一致（包括 fillna=True 的行为）
 print("Calculating all TA features using library defaults...")
 try:
-    # 这个函数会生成大约 80+ 个特征列
+    # 此时 df 的索引是 RangeIndex(整数)，ta 库内部使用整数访问不会触发 FutureWarning
     df = ta.add_all_ta_features(
         df, 
         open="Open", 
@@ -71,8 +67,13 @@ try:
 except Exception as e:
     print(f"Error in add_all_ta_features: {e}")
 
+# --- 关键修改：TA 计算完毕后，再设置 Date 为索引 ---
+# 因为下面的时间特征计算依赖于 df.index 是日期类型
+df = df.set_index('Date')
+
 # 2. 时间特征
 try:
+    # 此时 index 已经是 Date 了，可以正常计算
     next_dates = df.index + pd.Timedelta(days=1)
     df['next_weekday'] = next_dates.weekday
     df['next_is_weekend'] = df['next_weekday'].isin([5, 6]).astype(int)
@@ -109,7 +110,6 @@ print(f"Selected {len(df.columns)} features from the generated set.")
 df = df.reset_index()
 
 # 5. Clean Data: Remove empty rows
-# 虽然使用了 fillna=True，但为了保险起见还是检查一下
 original_len = len(df)
 df = df.dropna()
 if original_len != len(df):
@@ -118,10 +118,15 @@ if original_len != len(df):
 # Optional: Sort descending (Newest first)
 df = df.sort_values('Date', ascending=False)
 
-# 6. Save to specified directory
-if not os.path.exists(output_dir):
+# 6. Save to specified file path (修改 2)
+output_path = args.save_to
+
+# 获取目录路径
+output_dir = os.path.dirname(output_path)
+
+# 如果路径包含目录，且目录不存在，则创建
+if output_dir and not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
-output_path = os.path.join(output_dir, filename)
 df.to_csv(output_path, index=False)
 print(f"File saved successfully to: {output_path}")
