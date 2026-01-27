@@ -202,7 +202,7 @@ def main():
         print("-" * 50)
         # print("Info: OHLC data missing or incomplete. Skipping Actual Choppy calculation.")
 
-    print("-" * 50)
+    # print("-" * 50)
 
     # 6. 保存 CSV
     try:
