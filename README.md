@@ -1,156 +1,97 @@
-<p align="center">
- <img src="assets/logo.png" alt="drawing" width="200" style="float: center;"/> 
-</p>
+### 一个基于LightGBM的三重障碍法涨跌方向预测模型
 
-<h1 align="center">🚀 CryptoMamba: Leveraging State Space Models for Accurate Bitcoin Price Prediction</h1>
+---
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"/></a>
-  <a href="https://github.com/MShahabSepehri/CryptoMamba/stargazers"><img src="https://img.shields.io/github/stars/MShahabSepehri/CryptoMamba?style=social" alt="GitHub Stars"/></a>
-</p>
+### 问题一：XGBoost vs LightGBM vs CatBoost，选谁？
 
-> 📣 **Announcements**  
-> CryptoMamba paper has been published at [IEEE International Conference on Blockchain and Cryptocurrency (ICBC) 2025](https://icbc2025.ieee-icbc.org/)! 🎉  
-> We presented CryptoMamba at the [Advances in Financial AI Workshop @ ICLR 2025](https://sites.google.com/view/financialaiiclr25/).
+**结论：首选 LightGBM。**
 
-<p align="justify" > 
-<strong>CryptoMamba</strong> is a novel Mamba-based architecture designed for accurate and efficient time-series forecasting, with a focus on cryptocurrency price prediction. Leveraging the capabilities of SSMs, CryptoMamba excels at capturing long-range dependencies and adapting to highly volatile market conditions.
-</p>
+1.  **LightGBM (LGBM)**：
+    *   **优势**：**速度最快**，内存占用最低。在处理金融时间序列（这种数值型表格数据）时，它的精度通常略高于 XGBoost，且训练速度快 10 倍以上。这对于你需要频繁调整参数回测非常重要。
+    *   **实现难度**：极低。Python 的 `lightgbm` 库和 `scikit-learn` 用法几乎一样。
+2.  **XGBoost**：
+    *   老牌王者，非常稳健。但在数据量大或者特征多的时候，速度比 LGBM 慢。
+3.  **CatBoost**：
+    *   优势在于处理“类别特征”（比如“星期几”、“交易所名称”）。但你的数据主要是数值（价格、指标），CatBoost 的优势发挥不出来，且推理速度较慢。
 
-Repository Includes:
-- **Implementation** of CryptoMamba and baseline models (LSTM, Bi-LSTM, GRU, and S-Mamba).  
-- **Two Trading Algorithms**: Vanilla and Smart, for evaluating real-world performance.  
-- **Code** for data preprocessing, model training, evaluation metrics, and trading simulations.  
+**建议**：不用纠结，直接上 **LightGBM**。
 
-<p align="justify"> 
-CryptoMamba’s robust performance and generalizability make it a promising solution for various sequential forecasting tasks, including financial markets, commodities, and other time-series applications.
-</p>
+---
 
-## 📖 Table of Contents
+### 问题二：如何设置“三重障碍法”的止盈止损标签？
 
-  * [Requirements](#-requirements)
-  * [Usage](#-usage)
-    * [Data](#data)
-    * [Config](#config)
-    * [Train New Model](#train-new-model)
-    * [Evaluate Model](#evaluate-model)
-    * [Predict Next Day Price](#predict-next-day-price)
-  * [Results](#-results)
-  * [Citation](#-citation)
-  * [Where to Ask for Help](#-where-to-ask-for-help)
+问题：**是该用固定值（1%），还是用分位数价格？**
 
-## 🔧 Requirements
+**绝对不能用绝对价格（如几千美元），也不能完全照搬你的分位数价格。**
 
-To install the requirements, you can use:
+#### 1. 为什么不能用“具体价格”？（回答你的疑问 3）
+*   **非平稳性 (Non-Stationarity)**：
+    *   2018年 BTC 3000美元，跌 10% 是 300美元。
+    *   2024年 BTC 90000美元，跌 10% 是 9000美元。
+    *   如果你用“价格差”做标签或特征，模型会彻底懵掉。
+*   **解决方法**：必须使用 **百分比 (%)** 或者 **波动率倍数 (ATR)**。这样无论是 3000 还是 90000，模型看到的都是“波动了 1 个单位”。
 
-```
-pip install -r requirements.txt
-```
+#### 2. 为什么不能直接用“分位数是否触及”做标签？（回答你的疑问 4）
+*   **幸存者偏差**：
+    *   如果某天是大阳线（光头），你的 `Low-q` 没接到货。如果你把这一天标记为“不涨不跌（Label 0）”，模型会很困惑：明明涨了那么多，为什么你说没涨？
+    *   这会导致模型**错过强趋势**。
+*   **模型的分工**：
+    *   **Judge (方向模型)** 的任务是：告诉你今天**大势**往哪边走（贝塔收益）。
+    *   **Sniper (分位数模型)** 的任务是：在确定方向后，帮你找**最优入场点**（阿尔法收益）。
+    *   **Judge 不应该关心 Sniper 能不能接到货**。Judge 只需要说“今天要涨”，Sniper 负责去挂单。如果没接到（踏空），那是 Sniper 的问题，不是 Judge 的错。
 
-<p align="justify" > 
-If you have difficulties installing <code>mamba_ssm</code>, please follow the instructions in <a href="https://github.com/state-spaces/mamba">its GitHub repository</a>.
-</p>
+---
 
-## 💡 Usage
+### 🚀 最佳实践：基于 ATR 的动态三重障碍法
 
-### Data
+针对你的策略体系，我为你设计了最科学的标签定义方法。
 
-<p align="justify" > 
-You can find the processed data that we use in <a href="./data/2018-09-17_2024-09-16_86400">here</a>. If you want to use another data configuration, you should change the configuration in <a href="./configs/data_configs/mode_1.yaml">the data config file</a>. Note that the <code>data_path</code> should point to the raw data file with a similar format to <a href="./data/one_day_pred.csv">this</a>.
-</p>
+我们需要引入一个指标：**ATR (Average True Range，平均真实波幅)**。它代表了最近一段时间市场平均每天波动多少钱。
 
+#### 标签生成步骤 (Labeling Process)
 
-### Config
-<p align="justify" > 
-If you want to use additional features other than Open, Close, High, Low, Timestamp, and Volume, you should specify a list called <code>additional_features</code> in your data and training configuration files. Note that your raw data file should have these features. 
-</br>
-If you want to change the time resolution, you should change the <code>date_format</code> in your data configuration file and also set <code>jumps</code> to your desired resolution in seconds. Note that your raw data dates and your start and end dates in the data configuration should follow the new date format.
-</p>
+**目标**：预测未来 1 天（或 Intraday）的方向。
 
+对于历史数据中的每一天 $t$：
 
-### Train New Model
-To train a model, use the following: 
+1.  **计算当天的波动率基准**：
+    *   获取昨日的 $ATR_{14}$ 值（例如昨天 ATR 是 2000美元，代表最近平均每天波动 2000刀）。
+2.  **设置动态障碍 (Barrier)**：
+    *   **上轨 (Upper)** = $Open_t + 1.0 \times ATR$
+    *   **下轨 (Lower)** = $Open_t - 1.0 \times ATR$
+    *   *(注：系数 1.0 可以调整，取决于你想抓多大的行情)*
+3.  **观察当天 $t$ 的最高最低价**：
+    *   如果 $High_t >$ **上轨** 且 $Low_t >$ **下轨**（涨破了 ATR，且没跌破 ATR）：
+        *   **Label = 1 (做多)**
+    *   如果 $Low_t <$ **下轨** 且 $High_t <$ **上轨**（跌破了 ATR，且没涨破 ATR）：
+        *   **Label = 2 (做空)**
+    *   如果 $High >$ 上轨 且 $Low <$ 下轨（天地针，两头扫损）：
+        *   **Label = 0 (震荡/不操作)**
+    *   如果都没碰到（窄幅震荡）：
+        *   **Label = 0 (震荡/不操作)**
 
-```
-python3 scripts/training.py --config CONFIG_NAME
-```
-<p align="justify" > 
-Here, <code>CONFIG_NAME</code> is the name of a config file in <a href="configs/training/">the training config folder</a> without its extension. For example, to train CryptoMamba with volume you can run the following command:
-</p>
+#### 这种方法的优点：
 
-```
-python3 scripts/training.py --config cmamba_v
-```
+1.  **解决了价格变化问题**：ATR 是跟着币价走的。币价高 ATR 就大，币价低 ATR 就小。模型学到的是“相对波动强度”。
+2.  **解决了“光头阳线”问题**：
+    *   如果是光头大阳线，$High$ 肯定冲破了 上轨，$Low$ 没破 下轨。
+    *   **Label = 1 (做多)**。
+    *   **实战执行**：Judge 说做多 -> 你挂 `Low-q` 多单 -> 结果没回调 -> 没成交。
+    *   **结果**：踏空。**这没问题！** 模型判断对了方向，只是你的挂单策略太保守。这比“模型判断错了方向导致亏损”要好一万倍。
+3.  **匹配你的风控**：ATR 代表了市场正常的波动幅度。如果价格运动超过了 ATR，说明趋势形成了。
 
-### Evaluate Model
+### 总结
 
-To evaluate a model, run this command:
-```
-python scripts/evaluation.py --config CONFIG_NAME --ckpt_path PATH_TO_CHECKPOINT
-```
+1.  **模型**：选 **LightGBM**。
+2.  **标签**：使用 **ATR 动态波动率** 来定义涨跌，不要用固定百分比，也不要用你的分位数价格（那是执行层的事）。
+3.  **逻辑**：
+    *   Judge (LightGBM) 负责看天气（预测波动方向）。
+    *   Sniper (Mamba) 负责撒网（预测 High/Low 挂单点位）。
+    *   如果 Judge 预测大晴天（涨），Sniper 却没捕到鱼（没回调），那是运气问题，不要为了为了强行成交而通过修改标签去误导 Judge。
 
-To run the trading simulation, you can use the following command:
-
-```
-python scripts/simulate_trade.py --config CONFIG_NAME --ckpt_path PATH_TO_CHECKPOINT --split SPLIT_NAME --trade_mode TRADE_ALGORITHM
-```
-
-Where `SPLIT_NAME` is `train`, `val`, or `test` and `TRADE_ALGORITHM is` `smart` or `vanilla` or `smart_w_short`.
-
-### Predict Next Day Price
-<p align="justify" > 
-We also have a script to predict the next day's price and trade suggestions by providing the prices of its previous days. You have to create a <code>csv</code> file similar to [this](data/one_day_trade.csv) and use this command:
-</p>
-
-```
-python scripts/one_day_pred.py --config CONFIG_NAME --ckpt_path PATH_TO_CHECKPOINT --date DATE
-```
-
-If you don't provide a value for `DATE`, the code automatically predicts one day after the last day that is in the file.
-
-<!-- ### Trading Suggestion -->
- 
-
-## 📈 Results
-
-<div align="center">
-
-| Model | RMSE | MAPE | MAE | Parameters |
-| :--: | :--: | :--: | :--: |  :--: |
-| LSTM | 2672.7 | 3.609 | 2094.3 | 204K |
-| Bi-LSTM | 2325.6 | 3.072 | 1778.8 | 569k |
-| GRU | 1892.4 | 2.385 | 1371.2 | 153k |
-| iTransformer | 1826.9 | 2.4260 | 1334.3 | 201k |
-| S-Mamba | 1717.4 | 2.248 | 1239.9 | 330k |
-| CryptoMamba | **1713.0** | **2.171** | **1200.9** | **136k** |
-| LSTM-v | 2202.1 | 2.896 | 1668.9 | 204K |
-| Bi-LSTM-v | 2080.2 | 2.738 | 1562.5 | 569k |
-| GRU-v | 1978.0 | 2.526 | 1454.3  | 153k |
-| iTransformer-v | 1779.9 | 2.427 | 1322.1 | 201k |
-| S-Mamba-v | 1651.6 | 2.215 | 1209.7 | 330k |
-| CryptoMamba-v | **1598.1** | **2.034** | **1120.7** | **136k** |
-
-</div>
-
-<!---
-## 📚 Paper
-
--->
-## 🎯 Citation 
-
-If you use CryptoMamba in a research paper, please cite our [paper](https://arxiv.org/abs/2501.01010):
-
-```bibtex
-@article{Sepehri2025CryptoMamba,
-      title={CryptoMamba: Leveraging State Space Models for Accurate Bitcoin Price Prediction}, 
-      author={Mohammad Shahab Sepehri and Asal Mehradfar and Mahdi Soltanolkotabi and Salman Avestimehr},
-      year={2025},
-      url={https://arxiv.org/abs/2501.01010}
-}
-```
-
-## ❓ Where to Ask for Help
-
-<p align="justify" > 
-If you have any questions, feel free to open a <a href="https://github.com/MShahabSepehri/CryptoMamba/discussions">Discussion</a> and ask your question. You can also email <a href="mailto:sepehri@usc.edu">sepehri@usc.edu</a> (Mohammad Shahab Sepehri) or <a href="mailto:mehradfa@usc.edu">mehradfa@usc.edu</a> (Asal Mehradfar).
-</p>
+1.  **模型**：选 **LightGBM**。
+2.  **标签**：使用 **ATR 动态波动率** 来定义涨跌，不要用固定百分比，也不要用你的分位数价格（那是执行层的事）。
+3.  **逻辑**：
+    *   Judge (LightGBM) 负责看天气（预测波动方向）。
+    *   Sniper (Mamba) 负责撒网（预测 High/Low 挂单点位）。
+    *   如果 Judge 预测大晴天（涨），Sniper 却没捕到鱼（没回调），那是运气问题，不要为了为了强行成交而通过修改标签去误导 Judge。
