@@ -1,9 +1,0 @@
-target: pl_modules.lstm_module.LSTMModule
-params: 
-    num_features: 5
-    hidden_size: 100
-    num_layers: 3
-    bidirectional: False
-    window_size: 14
-    loss: 'mse'
-normalize: True

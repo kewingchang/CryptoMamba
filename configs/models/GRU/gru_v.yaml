@@ -1,8 +1,0 @@
-target: pl_modules.gru_module.GRUModule
-params: 
-    num_features: 6
-    hidden_size: 100
-    num_layers: 3
-    window_size: 14
-    loss: 'mse'
-normalize: True
