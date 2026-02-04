@@ -1,3 +1,7 @@
+# training.py
+import os, sys, pathlib
+sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
+
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
@@ -7,23 +11,12 @@ import sys
 import os
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.utils.class_weight import compute_sample_weight # 新增：用于处理 'balanced' 字符串
+from utils.io_tools import load_yaml, load_data
+
 
 # ==========================================
 # 辅助函数
 # ==========================================
-
-def load_yaml(filepath):
-    """读取YAML配置文件"""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = yaml.safe_load(f)
-            if content is None:
-                return {}
-            return content
-    except Exception as e:
-        print(f"[Fatal] Error loading config {filepath}: {e}")
-        sys.exit(1)
-
 def validate_data_integrity(df, data_cfg, train_cfg):
     """严格校验"""
     print("[Validation] Starting pre-flight checks...")
@@ -65,27 +58,6 @@ def validate_data_integrity(df, data_cfg, train_cfg):
     print(f"[Validation] Passed. Features: {len(all_feats)}, Target: '{target_col}'")
     return all_feats, target_col
 
-def load_data(data_config):
-    path = data_config['data_path']
-    print(f"[Data] Loading CSV from {path}...")
-    try:
-        df = pd.read_csv(path)
-    except Exception as e:
-        print(f"[Fatal] Failed to read CSV: {e}")
-        sys.exit(1)
-        
-    if 'Date' in df.columns:
-        try:
-            df['Date'] = pd.to_datetime(df['Date'], format=data_config.get('date_format'))
-            df = df.sort_values('Date').reset_index(drop=True)
-        except Exception as e:
-            print(f"[Fatal] Date parsing failed: {e}")
-            sys.exit(1)
-    else:
-        print("[Fatal] CSV must contain a 'Date' column.")
-        sys.exit(1)
-    return df
-
 def split_data(df, data_config):
     def get_slice(d_df, start, end):
         mask = (d_df['Date'] >= start) & (d_df['Date'] < end)
@@ -120,7 +92,12 @@ def main():
     params_cfg = load_yaml(args.params_config)
     train_cfg = load_yaml(args.training_config)
 
-    df = load_data(data_cfg)
+    # 2. 加载数据
+    # 直接传入 path 字符串
+    df = load_data(
+        path=data_cfg['data_path'], 
+        date_format=data_cfg.get('date_format')
+    )
     feature_cols, target_col = validate_data_integrity(df, data_cfg, train_cfg)
     train_df, val_df, test_df = split_data(df, data_cfg)
 
@@ -135,7 +112,7 @@ def main():
     y_test = test_df[target_col].astype(int)
 
     # =========================================================
-    # 【核心修改】处理 class_weight
+    # 处理 class_weight
     # =========================================================
     lgbm_params = params_cfg.copy()
     
@@ -161,8 +138,6 @@ def main():
                 sys.exit(1)
         else:
              print(f"[Warning] Unknown format for class_weight: {custom_weight_config}. Ignoring.")
-
-    # =========================================================
 
     # 构建 Dataset (将计算好的 weights 塞进去)
     lgb_train = lgb.Dataset(X_train, y_train, weight=sample_weights)
@@ -209,8 +184,40 @@ def main():
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred, target_names=target_names, zero_division=0))
 
+    # -------------------------------------------------------
+    # 加入阈值过滤，看看高置信度的表现
+    # -------------------------------------------------------
+    print("\n" + "-" * 30)
+    print("[Evaluation] Testing with Confidence Threshold...")
+    
+    # 获取预测概率矩阵 [N_samples, 3]
+    y_prob = model.predict(X_test, num_iteration=model.best_iteration)
+    
+    # 原始预测 (Argmax)
+    y_pred_raw = [np.argmax(x) for x in y_prob]
+    
+    # 高置信度预测 (Thresholding)
+    threshold = 0.60  # 只有概率 > 60% 才出手，否则由它去(Wait)
+    y_pred_confident = []
+    
+    for probs in y_prob:
+        class_id = np.argmax(probs)
+        probability = probs[class_id]
+        
+        if class_id != 0 and probability < threshold:
+            # 如果预测是涨/跌，但概率不够高，强制转为观望(0)
+            y_pred_confident.append(0)
+        else:
+            y_pred_confident.append(class_id)
+            
+    print(f"\n=== Report (Standard Argmax) ===")
+    print(classification_report(y_test, y_pred_raw, target_names=['Wait', 'Long', 'Short'], zero_division=0))
+    
+    print(f"\n=== Report (Confident Threshold > {threshold}) ===")
+    print(classification_report(y_test, y_pred_confident, target_names=['Wait', 'Long', 'Short'], zero_division=0))
+
     # 保存
-    save_dir = os.path.dirname(data_cfg.get('root', '.')) # 简单容错
+    save_dir = os.path.dirname(data_cfg.get('root', '.'))
     if 'checkpoints' in data_cfg: save_dir = data_cfg['checkpoints'] # 优先用 config 里的
     elif 'root' in data_cfg: save_dir = data_cfg['root']
     
