@@ -1,5 +1,5 @@
 # 自动平衡权重，让涨跌的权重变大
-class_weight: "balanced"
+# class_weight: "balanced"
 boosting_type: "gbdt"
 
 # 树的复杂度 (控制过拟合的关键)
