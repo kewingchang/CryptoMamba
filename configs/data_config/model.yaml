@@ -17,7 +17,6 @@ additional_features: [
     "PSAR",
     "OBV",
     "ADXR_14",
-    "APO",
     "AROON_osc_14",
     "BOP",
     "CCI_14",
