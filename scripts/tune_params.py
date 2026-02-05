@@ -16,7 +16,7 @@ from utils.io_tools import load_yaml, load_data, save_yaml
 
 
 # ==========================================
-# 辅助函数 (复用自 train 脚本)
+# 辅助函数
 # ==========================================
 def validate_and_prepare(df, data_cfg, train_cfg):
     """数据校验与特征提取"""
@@ -154,10 +154,7 @@ class ObjectiveCV:
             train_data = lgb.Dataset(X_train_fold, label=y_train_fold)
             val_data = lgb.Dataset(X_val_fold, label=y_val_fold, reference=train_data)
             
-            callbacks = [
-                # 配合 Optuna 进行剪枝
-                optuna.integration.LightGBMPruningCallback(trial, "multi_logloss")
-            ]
+            callbacks = []
             
             # 在 CV 内部也可以用 Early Stopping
             if self.train_cfg.get('early_stop', False):
@@ -242,7 +239,7 @@ def main():
     
     # 启动 CV 调参
     objective = ObjectiveCV(X_dev, y_dev, params_cfg, train_cfg)
-    study = optuna.create_study(direction="maximize", pruner=optuna.pruners.MedianPruner())
+    study = optuna.create_study(direction="maximize")
     
     print(f"[Optuna] Running {n_trials} trials...")
     study.optimize(objective, n_trials=n_trials)
