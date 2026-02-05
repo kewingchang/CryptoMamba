@@ -187,34 +187,34 @@ def main():
     # -------------------------------------------------------
     # 加入阈值过滤，看看高置信度的表现
     # -------------------------------------------------------
-    print("\n" + "-" * 30)
-    print("[Evaluation] Testing with Confidence Threshold...")
+    # print("\n" + "-" * 30)
+    # print("[Evaluation] Testing with Confidence Threshold...")
     
-    # 获取预测概率矩阵 [N_samples, 3]
-    y_prob = model.predict(X_test, num_iteration=model.best_iteration)
+    # # 获取预测概率矩阵 [N_samples, 3]
+    # y_prob = model.predict(X_test, num_iteration=model.best_iteration)
     
-    # 原始预测 (Argmax)
-    y_pred_raw = [np.argmax(x) for x in y_prob]
+    # # 原始预测 (Argmax)
+    # y_pred_raw = [np.argmax(x) for x in y_prob]
     
-    # 高置信度预测 (Thresholding)
-    threshold = 0.55  # 只有概率 > 55% 才出手，否则由它去(Wait)
-    y_pred_confident = []
+    # # 高置信度预测 (Thresholding)
+    # threshold = 0.55  # 只有概率 > 55% 才出手，否则由它去(Wait)
+    # y_pred_confident = []
     
-    for probs in y_prob:
-        class_id = np.argmax(probs)
-        probability = probs[class_id]
+    # for probs in y_prob:
+    #     class_id = np.argmax(probs)
+    #     probability = probs[class_id]
         
-        if class_id != 0 and probability < threshold:
-            # 如果预测是涨/跌，但概率不够高，强制转为观望(0)
-            y_pred_confident.append(0)
-        else:
-            y_pred_confident.append(class_id)
+    #     if class_id != 0 and probability < threshold:
+    #         # 如果预测是涨/跌，但概率不够高，强制转为观望(0)
+    #         y_pred_confident.append(0)
+    #     else:
+    #         y_pred_confident.append(class_id)
             
-    print(f"\n=== Report (Standard Argmax) ===")
-    print(classification_report(y_test, y_pred_raw, target_names=['Wait', 'Long', 'Short'], zero_division=0))
+    # print(f"\n=== Report (Standard Argmax) ===")
+    # print(classification_report(y_test, y_pred_raw, target_names=['Wait', 'Long', 'Short'], zero_division=0))
     
-    print(f"\n=== Report (Confident Threshold > {threshold}) ===")
-    print(classification_report(y_test, y_pred_confident, target_names=['Wait', 'Long', 'Short'], zero_division=0))
+    # print(f"\n=== Report (Confident Threshold > {threshold}) ===")
+    # print(classification_report(y_test, y_pred_confident, target_names=['Wait', 'Long', 'Short'], zero_division=0))
 
     # 保存
     save_dir = os.path.dirname(data_cfg.get('root', '.'))
