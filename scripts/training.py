@@ -197,7 +197,7 @@ def main():
     y_pred_raw = [np.argmax(x) for x in y_prob]
     
     # 高置信度预测 (Thresholding)
-    threshold = 0.60  # 只有概率 > 60% 才出手，否则由它去(Wait)
+    threshold = 0.55  # 只有概率 > 55% 才出手，否则由它去(Wait)
     y_pred_confident = []
     
     for probs in y_prob:
