@@ -1,0 +1,22 @@
+# --- 任务结构参数 (静态，Optuna 不调这些) ---
+boosting_type: "gbdt"
+objective: "binary"
+metric: "auc"
+scale_pos_weight: 2.3
+
+# 树的复杂度 (控制过拟合的关键)
+num_leaves: 31
+max_depth: 8
+min_child_samples: 20
+
+# 学习速度
+learning_rate: 0.05
+n_estimators: 10000
+
+# 随机性 (类似 Dropout，防止过拟合)
+colsample_bytree: 0.8
+subsample: 0.8
+
+# 正则化 (金融风控专用)
+reg_alpha: 0.5
+reg_lambda: 0.5
