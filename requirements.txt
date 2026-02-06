@@ -3,3 +3,4 @@ numpy
 lightgbm
 pyaml
 optuna
+optuna-integration[lightgbm]
