@@ -1,4 +1,4 @@
 early_stop: True
 stopping_rounds: 50
-n_trials: 50
+n_trials: 100
 target: "label_0.5"
