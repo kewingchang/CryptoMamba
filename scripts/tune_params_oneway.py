@@ -55,18 +55,30 @@ class ObjectiveCV:
         self.direction = direction
 
     def __call__(self, trial):
-        # 1. 定义搜索空间
-        # 针对过拟合问题，稍微扩大了 min_child_samples 和 正则化的搜索范围
+        # ============================================================
+        # 【核心修改】优化后的搜索空间 (更激进，更灵活)
+        # ============================================================
         param_grid = {
-            "num_leaves": trial.suggest_int("num_leaves", 10, 64),
-            "max_depth": trial.suggest_int("max_depth", 3, 10),
-            "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.1, log=True),
-            "n_estimators": trial.suggest_int("n_estimators", 500, 5000),
-            "min_child_samples": trial.suggest_int("min_child_samples", 10, 100),
-            "subsample": trial.suggest_float("subsample", 0.5, 0.9),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 0.9),
-            "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 10.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 10.0),
+            # 1. 树结构：允许更大的树
+            "num_leaves": trial.suggest_int("num_leaves", 30, 150), 
+            "max_depth": trial.suggest_int("max_depth", 5, 12),
+            "min_child_samples": trial.suggest_int("min_child_samples", 20, 100),
+            
+            # 2. 学习率：稍微放宽
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+            "n_estimators": trial.suggest_int("n_estimators", 1000, 8000),
+            
+            # 3. 随机性：保持原样
+            "subsample": trial.suggest_float("subsample", 0.6, 0.95),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.95),
+            
+            # 4. 正则化：大幅降低上限！防止模型"躺平"
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 2.0), # 之前是 10.0
+            "reg_lambda": trial.suggest_float("reg_lambda", 0.0, 2.0), # 之前是 10.0
+            
+            # 5. 【新增】正样本权重：这对 Recall/Precision 平衡至关重要
+            # 1.0 = 平衡, >1.0 = 重视正样本(Recall↑ Precision↓), <1.0 = 重视负样本(Recall↓ Precision↑)
+            "scale_pos_weight": trial.suggest_float("scale_pos_weight", 0.5, 5.0)
         }
         
         # 2. 合并参数
@@ -195,6 +207,9 @@ def main():
     # 强制修正一些可能被覆盖的关键结构参数
     new_params['objective'] = 'binary'
     new_params['metric'] = 'auc'
+    # 移除不需要的参数
+    new_params.pop('class_weight', None)
+    new_params.pop('num_class', None)
     
     save_yaml(new_params, args.params_config)
     print("=" * 40)
