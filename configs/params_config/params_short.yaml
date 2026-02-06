@@ -2,7 +2,7 @@
 boosting_type: "gbdt"
 objective: "binary"
 metric: "auc"
-scale_pos_weight: 2.3
+scale_pos_weight: 2.0
 
 # 树的复杂度 (控制过拟合的关键)
 num_leaves: 31
@@ -18,5 +18,5 @@ colsample_bytree: 0.8
 subsample: 0.8
 
 # 正则化 (金融风控专用)
-reg_alpha: 0.5
-reg_lambda: 0.5
+reg_alpha: 0.1
+reg_lambda: 0.1
