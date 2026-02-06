@@ -18,5 +18,5 @@ colsample_bytree: 0.8
 subsample: 0.8
 
 # 正则化 (金融风控专用)
-reg_alpha: 0.5
-reg_lambda: 0.5
+reg_alpha: 0.1
+reg_lambda: 0.1
