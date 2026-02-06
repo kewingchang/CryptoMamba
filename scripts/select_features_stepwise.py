@@ -14,7 +14,7 @@ from sklearn.model_selection import TimeSeriesSplit
 # ==========================================
 # 每次删除多少个特征？建议 1 或 5。
 # 1 最准但最慢，5 比较平衡。
-STEP_SIZE = 5
+STEP_SIZE = 1
 MIN_FEATURES = 20 # 删到剩多少个为止
 
 def load_yaml(filepath):
