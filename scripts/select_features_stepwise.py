@@ -155,12 +155,14 @@ def main():
         # 这样可以加速初期清理
         zero_imp_feats = feat_imp_df[feat_imp_df['imp'] == 0]['feature'].tolist()
         
-        if len(zero_imp_feats) >= STEP_SIZE:
-            to_drop = zero_imp_feats # 一次性把0的全删了，加速
-            msg = f"Drop {len(to_drop)} (Zero Imp)"
-        else:
-            to_drop = feat_imp_df.head(STEP_SIZE)['feature'].tolist()
-            msg = f"Drop bottom {len(to_drop)}"
+        # if len(zero_imp_feats) >= STEP_SIZE:
+        #     to_drop = zero_imp_feats # 一次性把0的全删了，加速
+        #     msg = f"Drop {len(to_drop)} (Zero Imp)"
+        # else:
+        #     to_drop = feat_imp_df.head(STEP_SIZE)['feature'].tolist()
+        #     msg = f"Drop bottom {len(to_drop)}"
+        to_drop = feat_imp_df.head(STEP_SIZE)['feature'].tolist()
+        msg = f"Drop bottom {len(to_drop)}"
             
         print(msg)
         
