@@ -88,7 +88,8 @@ class ObjectiveCV:
         tscv = TimeSeriesSplit(n_splits=5)
         scores = []
         
-        for train_index, val_index in tscv.split(self.X):
+        # 加上 enumerate 来获取当前是第几折
+        for i, (train_index, val_index) in enumerate(tscv.split(self.X)):
             X_train_fold, X_val_fold = self.X.iloc[train_index], self.X.iloc[val_index]
             y_train_fold, y_val_fold = self.y.iloc[train_index], self.y.iloc[val_index]
             
@@ -97,8 +98,10 @@ class ObjectiveCV:
             
             callbacks = []
             
-            # 使用 Optuna Pruning (剪枝)，加速搜索
-            callbacks.append(optuna.integration.LightGBMPruningCallback(trial, "auc"))
+            # 只在第 0 折 (第一折) 添加 Optuna 剪枝回调
+            # 这样后面的折数就不会重复报告 step 0, step 1... 导致冲突了
+            if i == 0:
+                callbacks.append(optuna.integration.LightGBMPruningCallback(trial, "auc"))
 
             if self.train_cfg.get('early_stop', False):
                 rounds = self.train_cfg.get('stopping_rounds', 50)
