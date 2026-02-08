@@ -101,7 +101,8 @@ def main():
 
     target_col = train_cfg['target']
     
-    excludes = ['Date', target_col, 'Open', 'High', 'Low', 'Close', 'Volume', 'marketCap']
+    # excludes = ['Date', target_col, 'Open', 'High', 'Low', 'Close', 'Volume', 'marketCap']
+    excludes = ['Date', "Label_ATR", "label", "label_0.3", "label_0.5", "label_0.8",  "label_0.5_3cat", "label_0.5_4cat", "label_0.5_Long_inclusive", "label_0.5_Short_inclusive", "close_chg_label"]
     all_candidate_cols = [c for c in df.columns if c not in excludes and not c.startswith('label_')]
     all_candidate_cols = list(set(all_candidate_cols))
     
