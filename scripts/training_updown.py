@@ -1,48 +1,37 @@
-# training_binary.py
 import os, sys, pathlib
 sys.path.insert(0, os.path.dirname(pathlib.Path(__file__).parent.absolute()))
 
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
-import yaml
 import argparse
-import sys
-import os
-from sklearn.metrics import classification_report, accuracy_score, roc_auc_score
+from sklearn.metrics import classification_report, accuracy_score, roc_auc_score, precision_score, recall_score
 from utils.io_tools import load_yaml, load_data
 
-# ==========================================
-# 辅助函数
-# ==========================================
-def validate_data_integrity(df, data_cfg, train_cfg):
-    print("[Validation] Starting pre-flight checks...")
 
+def validate_data_integrity(df, data_cfg, train_cfg):
     fixed_feats = data_cfg.get('fixed_features', [])
     add_feats = data_cfg.get('additional_features', []) or []
     target_col = train_cfg.get('target')
-    
-    if not target_col:
-        print("[Fatal] 'target' not defined in training_config.")
-        sys.exit(1)
 
-    # 【防止泄露】从特征列表中剔除 target 列
+    if not fixed_feats: sys.exit(1)
+    if not target_col: sys.exit(1)
+
     all_feats = fixed_feats + add_feats
     if target_col in all_feats:
-        print(f"[Warning] Target '{target_col}' found in features! Removing it automatically to prevent leakage.")
         all_feats = [f for f in all_feats if f != target_col]
-
-    missing_cols = [c for c in all_feats if c not in df.columns]
-    if missing_cols:
-        print(f"[Fatal] Missing features in CSV: {missing_cols}")
-        sys.exit(1)
         
-    if target_col not in df.columns:
-        print(f"[Fatal] Target '{target_col}' not found in CSV!")
-        sys.exit(1)
-
-    print(f"[Validation] Passed. Features: {len(all_feats)}, Target: '{target_col}'")
     return all_feats, target_col
+
+def filter_noise(df, close_chg_col, threshold=0.001):
+    if close_chg_col not in df.columns:
+        print("[ATTENTION!] Skip filter_noise...")
+        return df
+    print(f"[Preprocessing] Filtering noise (|Next_Day_Chg| < {threshold*100}%) using {close_chg_col}...")
+    next_day_chg = df[close_chg_col].shift(-1)
+    mask = (next_day_chg.abs() >= threshold) | (next_day_chg.isna())
+    df_filtered = df.loc[mask].reset_index(drop=True)
+    return df_filtered
 
 def split_data(df, data_config):
     def get_slice(d_df, start, end):
@@ -52,34 +41,26 @@ def split_data(df, data_config):
     train_df = get_slice(df, data_config['train_interval'][0], data_config['train_interval'][1])
     val_df   = get_slice(df, data_config['val_interval'][0], data_config['val_interval'][1])
     test_df  = get_slice(df, data_config['test_interval'][0], data_config['test_interval'][1])
-    
-    print(f"[Split] Train: {len(train_df)} | Val: {len(val_df)} | Test: {len(test_df)}")
     return train_df, val_df, test_df
 
-# ==========================================
-# 主程序
-# ==========================================
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_config", required=True)
     parser.add_argument("--params_config", required=True)
     parser.add_argument("--training_config", required=True)
+    parser.add_argument("--close_chg_col", type=str, default="PF_Close_Chg")
     
     try: args = parser.parse_args()
     except: args, _ = parser.parse_known_args()
 
-    print("-" * 30)
     data_cfg = load_yaml(args.data_config)
     params_cfg = load_yaml(args.params_config)
     train_cfg = load_yaml(args.training_config)
 
-    # 加载数据
     df = load_data(path=data_cfg['data_path'], date_format=data_cfg.get('date_format'))
+    df = filter_noise(df, args.close_chg_col, threshold=0.001)
     
-    # 校验并获取特征列表 (会自动剔除 target)
     feature_cols, target_col = validate_data_integrity(df, data_cfg, train_cfg)
-    
-    # 切分数据
     train_df, val_df, test_df = split_data(df, data_cfg)
 
     X_train = train_df[feature_cols]
@@ -89,29 +70,19 @@ def main():
     X_test = test_df[feature_cols]
     y_test = test_df[target_col].astype(int)
 
-    # 构建 Dataset
     lgb_train = lgb.Dataset(X_train, y_train)
     lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
 
-    # 准备参数
     lgbm_params = params_cfg.copy()
-    lgbm_params['objective'] = 'binary'   # 强制二分类
-    lgbm_params['metric'] = 'auc'         # 强制监控 AUC
+    lgbm_params['objective'] = 'binary'
+    lgbm_params['metric'] = 'auc'
     lgbm_params['verbose'] = -1
-    
-    # 清理多分类参数
     lgbm_params.pop('num_class', None)
     lgbm_params.pop('class_weight', None)
 
-    # 训练
-    print(f"[Training] Starting (Target: {target_col})...")
-    
-    callbacks = []
+    callbacks = [lgb.log_evaluation(period=100)]
     if train_cfg.get('early_stop', False):
-        rounds = train_cfg.get('stopping_rounds', 50)
-        callbacks.append(lgb.early_stopping(stopping_rounds=rounds))
-    
-    callbacks.append(lgb.log_evaluation(period=100))
+        callbacks.append(lgb.early_stopping(stopping_rounds=train_cfg.get('stopping_rounds', 50)))
 
     model = lgb.train(
         lgbm_params,
@@ -122,36 +93,81 @@ def main():
         callbacks=callbacks
     )
 
-    # ==========================================
-    # 【修正】二分类评估逻辑
-    # ==========================================
     print("\n" + "-" * 30)
     print("[Evaluation] Testing model...")
     
-    # 1. 获取概率 (1D array)
     y_prob = model.predict(X_test, num_iteration=model.best_iteration)
+    y_pred_default = (y_prob > 0.5).astype(int)
     
-    # 2. 转换为类别 (默认阈值 0.5)
-    y_pred = (y_prob > 0.5).astype(int)
-    
-    # 3. 计算指标
-    acc = accuracy_score(y_test, y_pred)
+    acc = accuracy_score(y_test, y_pred_default)
     auc = roc_auc_score(y_test, y_prob)
     
     print(f"Test Accuracy : {acc:.4f}")
     print(f"Test AUC      : {auc:.4f}")
+    print(f"Prob Stats: Min={y_prob.min():.4f}, Max={y_prob.max():.4f}, Mean={y_prob.mean():.4f}")
     
-    print("\nClassification Report (Threshold 0.5):")
-    # 这里的 names 对应 0 和 1
-    print(classification_report(y_test, y_pred, target_names=['Down (0)', 'Up (1)'], zero_division=0))
+    print("\n>>> Threshold Scan (For Up/1 Precision):")
+    print(f"{'Threshold':<10} | {'Precision':<10} | {'Recall':<10} | {'Trades':<10}")
+    print("-" * 50)
+    
+    start_scan = max(0.3, float(y_prob.mean()))
+    end_scan = min(0.95, float(y_prob.max()))
+    if end_scan <= start_scan: end_scan = start_scan + 0.1
+    
+    scan_range = np.arange(start_scan, end_scan + 0.05, 0.01)
+    
+    for thresh in scan_range:
+        y_tmp = (y_prob > thresh).astype(int)
+        prec = precision_score(y_test, y_tmp, pos_label=1, zero_division=0)
+        rec = recall_score(y_test, y_tmp, pos_label=1, zero_division=0)
+        count = y_tmp.sum()
+        if count > 0:
+            print(f"{thresh:.4f}     | {prec:.4f}     | {rec:.4f}     | {count:<10}")
 
-    # 保存
+    # ==========================================
+    # 下跌 (Down/0) 的高置信度扫描
+    # ==========================================
+    print("\n>>> Threshold Scan (For Down/0 Precision - Lower Prob is Better):")
+    print(f"{'Threshold':<10} | {'Precision':<10} | {'Recall':<10} | {'Trades':<10}")
+    print("-" * 50)
+
+    # 扫描区间：从均值(Mean) 向下扫描到 最小值(Min)
+    # 比如从 0.4 扫描到 0.1
+    start_scan_down = float(y_prob.mean())
+    end_scan_down = float(y_prob.min())
+    
+    # 防止区间倒挂
+    if end_scan_down >= start_scan_down: 
+        end_scan_down = start_scan_down - 0.1
+
+    # 生成递减的 range, 步长 -0.01
+    scan_range_down = np.arange(start_scan_down, end_scan_down - 0.05, -0.01)
+
+    for thresh in scan_range_down:
+        # 逻辑：概率小于阈值，才判定为做空(0)，否则判定为非空(1)
+        # 这里的 1 只是为了占位，表示"Rest"，不影响 pos_label=0 的计算
+        y_tmp = np.where(y_prob < thresh, 0, 1)
+        
+        # 计算 Label 0 的指标
+        prec = precision_score(y_test, y_tmp, pos_label=0, zero_division=0)
+        rec = recall_score(y_test, y_tmp, pos_label=0, zero_division=0)
+        
+        # 统计预测为 0 的数量
+        count = (y_tmp == 0).sum()
+        
+        if count > 0:
+            print(f"<{thresh:.4f}    | {prec:.4f}     | {rec:.4f}     | {count:<10}")
+    print("-" * 50)
+
+
     save_dir = os.path.dirname(data_cfg.get('root', '.'))
+    if 'checkpoints' in data_cfg: save_dir = data_cfg['checkpoints']
+    elif 'root' in data_cfg: save_dir = data_cfg['root']
     if not os.path.exists(save_dir): os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, 'lgbm_model.txt')
+    
+    save_path = os.path.join(save_dir, 'lgbm_model_updown.txt')
     model.save_model(save_path)
     print(f"[Output] Model saved to: {save_path}")
-    print("-" * 30)
 
 if __name__ == "__main__":
     main()
