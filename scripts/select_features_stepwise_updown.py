@@ -11,7 +11,6 @@ from sklearn.model_selection import TimeSeriesSplit
 # ==========================================
 # 辅助配置
 # ==========================================
-STEP_SIZE = 5
 MIN_FEATURES = 20
 
 def load_yaml(filepath):
@@ -100,8 +99,8 @@ def main():
     parser.add_argument("--data_config", required=True)
     parser.add_argument("--params_config", required=True)
     parser.add_argument("--training_config", required=True)
-    # 默认值修改为 Feat_Close_Chg
-    parser.add_argument("--close_chg_col", type=str, default="Feat_Close_Chg", help="Column for daily return")
+    parser.add_argument("--step_size", type=int, default=5, required=True)
+    parser.add_argument("--close_chg_col", type=str, default="PF_Close_Chg", help="Column for daily return")
     args = parser.parse_args()
 
     data_cfg = load_yaml(args.data_config)
@@ -141,11 +140,11 @@ def main():
         feat_imp_df = pd.DataFrame({'feature': current_features, 'imp': importances}).sort_values('imp', ascending=True)
         
         zero_imp_feats = feat_imp_df[feat_imp_df['imp'] == 0]['feature'].tolist()
-        if len(zero_imp_feats) >= STEP_SIZE:
+        if len(zero_imp_feats) >= args.step_size:
             to_drop = zero_imp_feats
             msg = f"Drop {len(to_drop)} (Zero Imp)"
         else:
-            to_drop = feat_imp_df.head(STEP_SIZE)['feature'].tolist()
+            to_drop = feat_imp_df.head(args.step_size)['feature'].tolist()
             msg = f"Drop bottom {len(to_drop)}"
             
         print(msg)
