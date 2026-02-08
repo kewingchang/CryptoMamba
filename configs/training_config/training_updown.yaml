@@ -1,0 +1,4 @@
+early_stop: True
+stopping_rounds: 50
+n_trials: 1000
+target: "close_chg_label"
