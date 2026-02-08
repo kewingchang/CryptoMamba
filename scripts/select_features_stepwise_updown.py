@@ -11,8 +11,6 @@ from sklearn.model_selection import TimeSeriesSplit
 # ==========================================
 # 辅助配置
 # ==========================================
-MIN_FEATURES = 20
-
 def load_yaml(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -99,7 +97,8 @@ def main():
     parser.add_argument("--data_config", required=True)
     parser.add_argument("--params_config", required=True)
     parser.add_argument("--training_config", required=True)
-    parser.add_argument("--step_size", type=int, default=5, required=True)
+    parser.add_argument("--step_size", type=int, default=5, required=False)
+    parser.add_argument("--min_features", type=int, default=20, required=False)
     parser.add_argument("--close_chg_col", type=str, default="PF_Close_Chg", help="Column for daily return")
     args = parser.parse_args()
 
@@ -115,9 +114,14 @@ def main():
     target_col = train_cfg['target']
     
     # excludes = ['Date', target_col, 'Open', 'High', 'Low', 'Close', 'Volume', 'marketCap']
-    excludes = ['Date', "Label_ATR", "label", "label_0.3", "label_0.5", "label_0.8",  "label_0.5_3cat", "label_0.5_4cat", "label_0.5_Long_inclusive", "label_0.5_Short_inclusive", "close_chg_label"]
-    all_features = [c for c in df.columns if c not in excludes and not c.startswith('label_')]
-    
+    # excludes = ['Date', "Label_ATR", "label", "label_0.3", "label_0.5", "label_0.8",  "label_0.5_3cat", "label_0.5_4cat", "label_0.5_Long_inclusive", "label_0.5_Short_inclusive", "close_chg_label"]
+    # all_features = [c for c in df.columns if c not in excludes and not c.startswith('label_')]
+    # all_features = list(set(all_features))
+    fixed_feats = data_cfg.get('fixed_features', []) or []
+    add_feats = data_cfg.get('additional_features', []) or []
+    all_features = fixed_feats + add_feats
+    all_features = list(set(all_features))
+
     dev_df = get_dev_data(df, data_cfg)
     y = dev_df[target_col].astype(int)
     
@@ -130,7 +134,7 @@ def main():
     print("-" * 60)
     
     iteration = 0
-    while len(current_features) >= MIN_FEATURES:
+    while len(current_features) >= args.min_features:
         iteration += 1
         X = dev_df[current_features]
         score, importances = evaluate_and_rank(X, y, params_cfg)

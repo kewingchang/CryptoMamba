@@ -10,7 +10,6 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 from joblib import Parallel, delayed
 
-MIN_FEATURES_TO_KEEP = 10 
 N_JOBS = -1 
 CV_SPLITS = 5
 
@@ -89,6 +88,7 @@ def main():
     parser.add_argument("--data_config", required=True)
     parser.add_argument("--params_config", required=True)
     parser.add_argument("--training_config", required=True)
+    parser.add_argument("--min_features", type=int, default=10, required=False)
     parser.add_argument("--close_chg_col", type=str, default="Feat_Close_Chg")
     args = parser.parse_args()
 
@@ -102,8 +102,12 @@ def main():
     target_col = train_cfg['target']
     
     # excludes = ['Date', target_col, 'Open', 'High', 'Low', 'Close', 'Volume', 'marketCap']
-    excludes = ['Date', "Label_ATR", "label", "label_0.3", "label_0.5", "label_0.8",  "label_0.5_3cat", "label_0.5_4cat", "label_0.5_Long_inclusive", "label_0.5_Short_inclusive", "close_chg_label"]
-    all_candidate_cols = [c for c in df.columns if c not in excludes and not c.startswith('label_')]
+    # excludes = ['Date', "Label_ATR", "label", "label_0.3", "label_0.5", "label_0.8",  "label_0.5_3cat", "label_0.5_4cat", "label_0.5_Long_inclusive", "label_0.5_Short_inclusive", "close_chg_label"]
+    # all_candidate_cols = [c for c in df.columns if c not in excludes and not c.startswith('label_')]
+    # all_candidate_cols = list(set(all_candidate_cols))
+    fixed_feats = data_cfg.get('fixed_features', []) or []
+    add_feats = data_cfg.get('additional_features', []) or []
+    all_candidate_cols = fixed_feats + add_feats
     all_candidate_cols = list(set(all_candidate_cols))
     
     dev_df = get_dev_data(df, data_cfg)
@@ -119,7 +123,7 @@ def main():
     best_global_score = initial_score
     best_global_features = current_features.copy()
     
-    while len(current_features) > MIN_FEATURES_TO_KEEP:
+    while len(current_features) > args.min_features:
         print(f"\n--- Round: {len(current_features)} features -> Eliminating 1 ---")
         
         tasks = []
