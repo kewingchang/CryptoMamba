@@ -140,12 +140,15 @@ def main():
         feat_imp_df = pd.DataFrame({'feature': current_features, 'imp': importances}).sort_values('imp', ascending=True)
         
         zero_imp_feats = feat_imp_df[feat_imp_df['imp'] == 0]['feature'].tolist()
-        if len(zero_imp_feats) >= args.step_size:
-            to_drop = zero_imp_feats
-            msg = f"Drop {len(to_drop)} (Zero Imp)"
-        else:
-            to_drop = feat_imp_df.head(args.step_size)['feature'].tolist()
-            msg = f"Drop bottom {len(to_drop)}"
+        # if len(zero_imp_feats) >= args.step_size:
+        #     to_drop = zero_imp_feats
+        #     msg = f"Drop {len(to_drop)} (Zero Imp)"
+        # else:
+        #     to_drop = feat_imp_df.head(args.step_size)['feature'].tolist()
+        #     msg = f"Drop bottom {len(to_drop)}"
+        # drop one by one
+        to_drop = feat_imp_df.head(args.step_size)['feature'].tolist()
+        msg = f"Drop bottom {len(to_drop)}"
             
         print(msg)
         current_features = [f for f in current_features if f not in to_drop]
