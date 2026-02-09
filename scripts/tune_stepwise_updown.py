@@ -146,6 +146,9 @@ def main():
     study.optimize(objective, n_trials=args.n_trials)
 
     print(f"Best CV AUC: {study.best_value:.4f}")
+    print(f"Best Params for Group [{args.group}]:")
+    for k, v in study.best_params.items():
+        print(f"  {k}: {v}")
     
     new_params = params_cfg.copy()
     new_params.update(study.best_params)
