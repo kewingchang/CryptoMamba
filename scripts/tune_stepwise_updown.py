@@ -82,7 +82,7 @@ class StepwiseObjective:
             y_train_fold, y_val_fold = self.y.iloc[train_index], self.y.iloc[val_index]
             
             lgb_train = lgb.Dataset(X_train_fold, label=y_train_fold)
-            lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
+            lgb_val = lgb.Dataset(X_val_fold, y_val_fold, reference=lgb_train)
             
             callbacks = []
             if i == 0: 
@@ -127,7 +127,8 @@ def main():
     data_cfg = load_yaml(args.data_config)
     params_cfg = load_yaml(args.params_config)
     train_cfg = load_yaml(args.training_config)
-    df = load_data(data_cfg['data_path'], data_cfg.get('date_format'))
+    # df = load_data(data_cfg['data_path'], data_cfg.get('date_format'))
+    df = load_data(path=data_cfg['data_path'], date_format=data_cfg.get('date_format'))
     df = filter_noise(df, args.close_chg_col, threshold=0.001)
 
     feature_cols, target_col = validate_and_prepare(df, data_cfg, train_cfg)
