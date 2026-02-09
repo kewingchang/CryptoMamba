@@ -1,0 +1,32 @@
+start_date: "2018-03-01"
+end_date: "2025-09-30"
+root: "./data"
+checkpoints: "./checkpoints"
+date_format: "%Y-%m-%d"
+data_path: "./data/BTC-USD.csv"
+train_interval: ["2018-03-01", "2024-06-01"]
+val_interval: ["2024-06-01", "2025-03-01"]
+test_interval: ["2025-03-01", "2025-09-30"]
+additional_features: []
+fixed_features:
+- FastK_5
+- WILLR_14
+- NATR_14
+- HT_PHASOR_inphase
+- Close_to_Open_Ratio
+- ICS_26
+- volume_cmf
+- trend_mass_index
+- trend_dpo
+- trend_kst
+- bar_strength
+- gk_vol
+- fng_lag_1
+- fng_lag_3
+- divergence_rank_diff
+- vol_fear_interaction
+- fng_range_interaction
+- emd_energy_imf2
+- marketCap
+- PF_K_UpShadow
+- PF_MCap_Chg
