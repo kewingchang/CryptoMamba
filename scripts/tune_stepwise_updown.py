@@ -48,15 +48,17 @@ class StepwiseObjective:
     def __call__(self, trial):
         params = self.base_params.copy()
         
-        # 针对【模型三】优化的搜索空间
         if self.group_name == 'structure':
-            params['num_leaves'] = trial.suggest_int('num_leaves', 10, 40)
+            # 适当放宽叶子数，加入学习率
+            params['num_leaves'] = trial.suggest_int('num_leaves', 10, 50)
             params['max_depth'] = trial.suggest_int('max_depth', 3, 8)
             params['min_child_samples'] = trial.suggest_int('min_child_samples', 20, 100)
+            params['learning_rate'] = trial.suggest_float('learning_rate', 0.005, 0.1, log=True)
             
         elif self.group_name == 'regularization':
-            params['reg_alpha'] = trial.suggest_float('reg_alpha', 0.0, 3.0)
-            params['reg_lambda'] = trial.suggest_float('reg_lambda', 0.0, 3.0)
+            # 大幅提高正则化上限，适应高噪音数据
+            params['reg_alpha'] = trial.suggest_float('reg_alpha', 0.0, 10.0)
+            params['reg_lambda'] = trial.suggest_float('reg_lambda', 0.0, 10.0)
             
         elif self.group_name == 'sampling':
             params['subsample'] = trial.suggest_float('subsample', 0.5, 0.95)
@@ -79,7 +81,7 @@ class StepwiseObjective:
             X_train_fold, X_val_fold = self.X.iloc[train_index], self.X.iloc[val_index]
             y_train_fold, y_val_fold = self.y.iloc[train_index], self.y.iloc[val_index]
             
-            lgb_train = lgb.Dataset(X_train, y_train)
+            lgb_train = lgb.Dataset(X_train_fold, label=y_train_fold)
             lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
             
             callbacks = []
@@ -93,7 +95,7 @@ class StepwiseObjective:
             bst = lgb.train(
                 params,
                 lgb_train,
-                num_boost_round=params.get('n_estimators', 5000),
+                num_boost_round=params.get('n_estimators', 10000), # 确保这里足够大
                 valid_sets=[lgb_val],
                 callbacks=callbacks
             )
@@ -106,6 +108,7 @@ class StepwiseObjective:
             scores.append(score)
             
         return np.mean(scores)
+
 
 def main():
     parser = argparse.ArgumentParser()
