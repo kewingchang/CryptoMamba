@@ -3,7 +3,7 @@ end_date: "2025-09-30"
 root: "./data"
 checkpoints: "./checkpoints"
 date_format: "%Y-%m-%d"
-data_path: "./data/BTC-USD.csv"
+data_path: "./data/ETH-USD.csv"
 train_interval: ["2018-03-01", "2024-06-01"]
 val_interval: ["2024-06-01", "2025-03-01"]
 test_interval: ["2025-03-01", "2025-09-30"]
