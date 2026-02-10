@@ -11,7 +11,6 @@ additional_features: []
 fixed_features:
 - BOP
 - PF_K_UpShadow
-- Bitbo_Sharpe
 - vol_current
 - vol_fear_interaction
 - AROON_osc_14
@@ -19,12 +18,10 @@ fixed_features:
 - Close_to_Low_Ratio
 - Vol_ROC
 - ADXR_14
-- next_day_of_month
 - momentum_ppo_hist
 - HT_SINE_leadsine
 - PF_K_Body
 - momentum_pvo_hist
-- next_halving_pos_angle
 - trend_stc
 - MACD_Signal
 - next_weekday
@@ -50,3 +47,4 @@ fixed_features:
 - pattern_sentiment_score
 - Close_to_High_Ratio
 - HT_DCPERIOD
+
