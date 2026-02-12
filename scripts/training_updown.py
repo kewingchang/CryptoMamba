@@ -172,6 +172,9 @@ def main():
     
     test_acc = accuracy_score(y_test, y_pred_default)
     test_auc = roc_auc_score(y_test, y_prob)
+
+    # 计算过拟合 Gap
+    auc_gap = abs(train_auc - test_auc)
     
     # 3. 计算 Prob Stats (Long & Short)
     # Long Prob = y_prob
@@ -187,6 +190,7 @@ def main():
     
     print(f"Test Accuracy : {test_acc:.4f}")
     print(f"Test AUC      : {test_auc:.4f}")
+    print(f"AUC Gap       : {auc_gap:.4f}")
     print(f"Prob Stats (Long): Min={prob_stats_long_min:.4f}, Max={prob_stats_long_max:.4f}, Mean={prob_stats_long_mean:.4f}")
 
     # 4. 提取 Threshold Scan 关键指标
@@ -199,6 +203,7 @@ def main():
     print(f"{'Threshold':<10} | {'Precision':<10} | {'Recall':<10} | {'Trades':<10}")
     start_scan = max(0.3, float(prob_stats_long_mean))
     end_scan = min(0.95, float(prob_stats_long_max))
+    long_snapshots = [] # 用于存储前两行
     for thresh in np.arange(start_scan, end_scan + 0.05, 0.01):
         y_tmp = (y_prob > thresh).astype(int)
         prec = precision_score(y_test, y_tmp, pos_label=1, zero_division=0)
@@ -206,6 +211,15 @@ def main():
         count = y_tmp.sum()
         if count > 0:
             print(f"{thresh:.4f}     | {prec:.4f}     | {rec:.4f}     | {count:<10}")
+            # 抓取前两个有效数据
+            if len(long_snapshots) < 2:
+                score = prec * rec # 需求 3: 计算综合指标
+                long_snapshots.append({
+                    'thresh': thresh,
+                    'prec': prec,
+                    'rec': rec,
+                    'score': score
+                })
     print("-" * 50)
 
     # ==========================================
@@ -219,6 +233,7 @@ def main():
     # 比如从 0.4 扫描到 0.1
     start_scan_down = float(y_prob.mean())
     end_scan_down = float(y_prob.min())
+    short_snapshots = [] # 用于存储前两行
     
     # 防止区间倒挂
     if end_scan_down >= start_scan_down: 
@@ -241,7 +256,22 @@ def main():
         
         if count > 0:
             print(f"<{thresh:.4f}    | {prec:.4f}     | {rec:.4f}     | {count:<10}")
+            # 抓取前两个有效数据
+            if len(short_snapshots) < 2:
+                score = prec * rec # 需求 3: 计算综合指标
+                short_snapshots.append({
+                    'thresh': thresh,
+                    'prec': prec,
+                    'rec': rec,
+                    'score': score
+                })
     print("-" * 50)
+    # 3. 填充缺失数据 (防止某方向交易过少导致抓取不到2行，导致CSV写入报错)
+    # 填充默认空值
+    def get_snap_val(snapshots, idx, key):
+        if idx < len(snapshots):
+            return round(snapshots[idx][key], 4)
+        return 0.0
 
     # ==========================================
     # 保存 CSV
@@ -254,6 +284,29 @@ def main():
         'Valid_AUC': round(valid_auc, 5),
         'Test_Accuracy': round(test_acc, 5),
         'Test_AUC': round(test_auc, 5),
+        'AUC_Gap': round(auc_gap, 5), # 需求 1
+
+        # 需求 2 & 3: Long Snapshots (Row 1 & 2)
+        'L_Row1_Thresh': get_snap_val(long_snapshots, 0, 'thresh'),
+        'L_Row1_Prec':   get_snap_val(long_snapshots, 0, 'prec'),
+        'L_Row1_Rec':    get_snap_val(long_snapshots, 0, 'rec'),
+        'L_Row1_Score':  get_snap_val(long_snapshots, 0, 'score'),
+        
+        'L_Row2_Thresh': get_snap_val(long_snapshots, 1, 'thresh'),
+        'L_Row2_Prec':   get_snap_val(long_snapshots, 1, 'prec'),
+        'L_Row2_Rec':    get_snap_val(long_snapshots, 1, 'rec'),
+        'L_Row2_Score':  get_snap_val(long_snapshots, 1, 'score'),
+
+        # 需求 2 & 3: Short Snapshots (Row 1 & 2)
+        'S_Row1_Thresh': get_snap_val(short_snapshots, 0, 'thresh'),
+        'S_Row1_Prec':   get_snap_val(short_snapshots, 0, 'prec'),
+        'S_Row1_Rec':    get_snap_val(short_snapshots, 0, 'rec'),
+        'S_Row1_Score':  get_snap_val(short_snapshots, 0, 'score'),
+
+        'S_Row2_Thresh': get_snap_val(short_snapshots, 1, 'thresh'),
+        'S_Row2_Prec':   get_snap_val(short_snapshots, 1, 'prec'),
+        'S_Row2_Rec':    get_snap_val(short_snapshots, 1, 'rec'),
+        'S_Row2_Score':  get_snap_val(short_snapshots, 1, 'score'),
         
         # Prob Stats
         'Long_Prob_Min': round(prob_stats_long_min, 4),
