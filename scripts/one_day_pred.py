@@ -198,7 +198,7 @@ def main():
         print(f"[Info] Created new record for {target_date_obj.date()}")
         
     # 排序与保存
-    res_df = res_df.sort_values('Date')
+    res_df = res_df.sort_values('Date', ascending=False)
     try:
         res_df.to_csv(args.pred_path, index=False)
         print(f"[Success] Saved result to {args.pred_path}")
