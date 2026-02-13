@@ -1,0 +1,31 @@
+start_date: '2018-03-01'
+end_date: '2025-09-30'
+root: ./data
+checkpoints: ./checkpoints
+date_format: '%Y-%m-%d'
+data_path: ./data/BTC-USD.csv
+train_interval: ['2018-03-01', '2024-06-01']
+val_interval: ['2024-06-01', '2025-03-01']
+test_interval: ['2025-03-01', '2025-09-30']
+additional_features: []
+fixed_features:
+- trend_kst
+- PF_K_UpShadow
+- PF_Open_Gap
+- MACD_Signal
+- PF_K_Body
+- ADXR_14
+- vol_current
+- FastK_5
+- AROON_osc_14
+- DX_14
+- next_weekday
+- ADI
+- HT_SINE_leadsine
+- fng_lag_2
+- CHOP_14
+- volume_obv
+- trend_mass_index
+- Close_to_High_Ratio
+- MACDFIX_Hist
+- TRIX_30
