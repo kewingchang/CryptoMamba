@@ -39,8 +39,8 @@ def run_inference(args):
         os.makedirs(log_dir)
 
     # 如果需要清理日志
-    if args.clear_log and os.path.exists(args.log):
-        os.remove(args.log)
+    # if args.clear_log and os.path.exists(args.log):
+    #     os.remove(args.log)
 
     current_date = start
     while current_date <= end:
