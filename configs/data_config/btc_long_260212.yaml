@@ -1,4 +1,5 @@
 # n270E-long
+# Model: btc_long_260212
 start_date: '2018-03-01'
 end_date: '2025-09-30'
 root: ./data
@@ -30,3 +31,4 @@ fixed_features:
 - Close_to_High_Ratio
 - MACDFIX_Hist
 - TRIX_30
+
