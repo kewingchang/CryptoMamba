@@ -1,5 +1,5 @@
 # n88B-short
-# Model: btc_short_260212
+# Model: eth_short_260212
 start_date: '2018-03-01'
 end_date: '2025-09-30'
 root: ./data
@@ -23,4 +23,5 @@ fixed_features:
 - CMF
 - bar_strength
 - Close_to_Open_Ratio
+
 
