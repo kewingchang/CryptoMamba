@@ -1,4 +1,5 @@
 # n346E-short
+# Model: btc_short_260212
 start_date: '2018-03-01'
 end_date: '2025-09-30'
 root: ./data
@@ -22,3 +23,4 @@ fixed_features:
 - daily_range_pct
 - PF_K_UpShadow
 - next_weekday
+
