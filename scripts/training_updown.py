@@ -212,7 +212,7 @@ def main():
         if count > 0:
             print(f"{thresh:.4f}     | {prec:.4f}     | {rec:.4f}     | {count:<10}")
             # 抓取前两个有效数据
-            if len(long_snapshots) < 2:
+            if len(long_snapshots) < 4:
                 score = prec * rec # 需求 3: 计算综合指标
                 long_snapshots.append({
                     'thresh': thresh,
@@ -257,7 +257,7 @@ def main():
         if count > 0:
             print(f"<{thresh:.4f}    | {prec:.4f}     | {rec:.4f}     | {count:<10}")
             # 抓取前两个有效数据
-            if len(short_snapshots) < 2:
+            if len(short_snapshots) < 4:
                 score = prec * rec # 需求 3: 计算综合指标
                 short_snapshots.append({
                     'thresh': thresh,
@@ -286,7 +286,7 @@ def main():
         'Test_AUC': round(test_auc, 5),
         'AUC_Gap': round(auc_gap, 5), # 需求 1
 
-        # 需求 2 & 3: Long Snapshots (Row 1 & 2)
+        # 需求 2 & 3: Long Snapshots
         'L_Row1_Thresh': get_snap_val(long_snapshots, 0, 'thresh'),
         'L_Row1_Prec':   get_snap_val(long_snapshots, 0, 'prec'),
         'L_Row1_Rec':    get_snap_val(long_snapshots, 0, 'rec'),
@@ -297,7 +297,17 @@ def main():
         'L_Row2_Rec':    get_snap_val(long_snapshots, 1, 'rec'),
         'L_Row2_Score':  get_snap_val(long_snapshots, 1, 'score'),
 
-        # 需求 2 & 3: Short Snapshots (Row 1 & 2)
+        'L_Row3_Thresh': get_snap_val(long_snapshots, 2, 'thresh'),
+        'L_Row3_Prec':   get_snap_val(long_snapshots, 2, 'prec'),
+        'L_Row3_Rec':    get_snap_val(long_snapshots, 2, 'rec'),
+        'L_Row3_Score':  get_snap_val(long_snapshots, 2, 'score'),
+
+        'L_Row4_Thresh': get_snap_val(long_snapshots, 3, 'thresh'),
+        'L_Row4_Prec':   get_snap_val(long_snapshots, 3, 'prec'),
+        'L_Row4_Rec':    get_snap_val(long_snapshots, 3, 'rec'),
+        'L_Row4_Score':  get_snap_val(long_snapshots, 3, 'score'),
+
+        # 需求 2 & 3: Short Snapshots
         'S_Row1_Thresh': get_snap_val(short_snapshots, 0, 'thresh'),
         'S_Row1_Prec':   get_snap_val(short_snapshots, 0, 'prec'),
         'S_Row1_Rec':    get_snap_val(short_snapshots, 0, 'rec'),
@@ -307,6 +317,16 @@ def main():
         'S_Row2_Prec':   get_snap_val(short_snapshots, 1, 'prec'),
         'S_Row2_Rec':    get_snap_val(short_snapshots, 1, 'rec'),
         'S_Row2_Score':  get_snap_val(short_snapshots, 1, 'score'),
+
+        'S_Row3_Thresh': get_snap_val(short_snapshots, 2, 'thresh'),
+        'S_Row3_Prec':   get_snap_val(short_snapshots, 2, 'prec'),
+        'S_Row3_Rec':    get_snap_val(short_snapshots, 2, 'rec'),
+        'S_Row3_Score':  get_snap_val(short_snapshots, 2, 'score'),
+
+        'S_Row4_Thresh': get_snap_val(short_snapshots, 3, 'thresh'),
+        'S_Row4_Prec':   get_snap_val(short_snapshots, 3, 'prec'),
+        'S_Row4_Rec':    get_snap_val(short_snapshots, 3, 'rec'),
+        'S_Row4_Score':  get_snap_val(short_snapshots, 3, 'score'),
         
         # Prob Stats
         'Long_Prob_Min': round(prob_stats_long_min, 4),
