@@ -102,11 +102,15 @@ def main():
         df[f'MFI{suffix}'] = talib.MFI(df['High'], df['Low'], df['Close'], df['Volume'], timeperiod=w)
 
         # EOM (Ease of Movement)
-        # pta.eom 返回的是 DataFrame，需要提取
+        # [修复点] 兼容 Series 和 DataFrame 返回值
         eom_res = pta.eom(df['High'], df['Low'], df['Close'], df['Volume'], length=w)
         if eom_res is not None:
-            # pta 的列名通常是 EOM_14_xxxx，我们直接取第一列重命名
-            df[f'EOM{suffix}'] = eom_res.iloc[:, 0]
+            if isinstance(eom_res, pd.DataFrame):
+                # 如果是 DataFrame，取第一列
+                df[f'EOM{suffix}'] = eom_res.iloc[:, 0]
+            else:
+                # 如果是 Series，直接使用
+                df[f'EOM{suffix}'] = eom_res
         
         # --- E. 波动率归一化成交量 ---
         # 逻辑：在波动率低的时候，少量成交量就能拉升，价值不同
@@ -139,16 +143,7 @@ def main():
     # 3. 清理与保存
     # ==========================================
     
-    # 删除中间变量 (可选)
-    # del df['VWAP_14'] 
-    
-    # 清理 NaN (由于 Rolling 产生的)
-    # 建议保留 dropna 这一步给最终的数据加载器做，但在特征工程脚本里做也没问题
-    # original_len = len(df)
-    # df = df.dropna()
-    # print(f"Dropped {original_len - len(df)} rows due to rolling windows.")
-
-    # 如果 Index 是 Date，reset_index 存回 CSV (这取决于你的 pipeline 标准)
+    # 恢复 index 为列以便保存
     df = df.reset_index()
 
     df.to_csv(filename, index=False)
