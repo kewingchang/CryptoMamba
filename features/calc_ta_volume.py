@@ -1,143 +1,158 @@
 import argparse
 import pandas as pd
-import talib  # pip install TA-Lib
 import numpy as np
-import pandas_ta as pta  # pip install pandas_ta
-
-
-def apply_rolling_df(df, window_size, func):
-    """Custom rolling apply to pass sub-DataFrame to func."""
-    result = pd.Series(np.nan, index=df.index)
-    # 修正循环范围，确保不发生 Index 越界
-    for i in range(window_size - 1, len(df)):
-        window = df.iloc[i - window_size + 1 : i + 1]
-        result.iloc[i] = func(window)
-    return result
+import talib 
+import pandas_ta as pta 
 
 def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Calculate technical indicators and update CSV file.")
-    parser.add_argument('--filename', type=str, required=True, help="The CSV filename to process.")
+    parser = argparse.ArgumentParser(description="Calculate Advanced Volume Features")
+    parser.add_argument('--filename', type=str, required=True, help="Input CSV filename")
     args = parser.parse_args()
-
     filename = args.filename
 
-    # Read the CSV file
-    df = pd.read_csv(filename, parse_dates=['Date'])
+    # 1. 读取数据
+    try:
+        df = pd.read_csv(filename)
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return
 
-    # Set index to Date and sort
-    df = df.set_index('Date')
-    df = df.sort_index()
+    # 确保有 Date 列并处理
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.set_index('Date').sort_index()
+    else:
+        # 如果没有 Date 列，尝试识别 index 是否已经是日期
+        try:
+            df.index = pd.to_datetime(df.index)
+            df = df.sort_index()
+        except:
+            print("Warning: No 'Date' column found and index is not datetime. Assuming sequential data.")
 
-    # Ensure required columns exist
-    required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column: {col}")
+    # 必需列检查
+    req_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+    for c in req_cols:
+        if c not in df.columns:
+            raise ValueError(f"Missing column: {c}")
+        df[c] = df[c].astype(float)
 
-    # Convert columns to float
-    df['Open'] = df['Open'].astype(np.float64)
-    df['High'] = df['High'].astype(np.float64)
-    df['Low'] = df['Low'].astype(np.float64)
-    df['Close'] = df['Close'].astype(np.float64)
-    df['Volume'] = df['Volume'].astype(np.float64)
+    # 2. 防除零因子
+    epsilon = 1e-9
 
-    # Prevent Division by Zero errors
-    epsilon = 1e-9 
+    print("Generating Advanced Volume Features...")
 
-    # --- 基础特征提取 ---
+    # ==========================================
+    # 0. 预计算基础指标 (VWAP, OBV Raw)
+    # ==========================================
     
-    # 1. Volatility Feature (vol_current)
-    df['Log_Return'] = np.log(df['Close'] / df['Close'].shift(1))
-    df['vol_current'] = df['Log_Return'].rolling(window=14).std(ddof=0)
-    df['vol_shock'] = df['vol_current'] / (df['vol_current'].rolling(30).mean() + epsilon)
+    # 修复 Bug: 计算 Rolling VWAP (14天) 用于后续距离计算
+    # 这里用 Typical Price * Volume 的加权平均
+    tp = (df['High'] + df['Low'] + df['Close']) / 3
+    tp_v = tp * df['Volume']
+    # 也就是 sum(TP*V, 14) / sum(V, 14)
+    df['VWAP_14'] = tp_v.rolling(14).sum() / (df['Volume'].rolling(14).sum() + epsilon)
 
-    # 2. OBV (Original - Rolling Implementation)
-    def calc_obv(window):
-        # 严格使用窗口内数据
-        return talib.OBV(window['Close'].values, window['Volume'].values)[-1]
-    df['OBV'] = apply_rolling_df(df, 14, calc_obv)
+    # 计算原始 OBV (用于衍生，本身不作为特征保存或最后删除)
+    obv_raw = talib.OBV(df['Close'].values, df['Volume'].values)
 
-    # 3. VWAP (Original Calculation)
-    def calc_vwap(window):
-        v = window['Volume'].values
-        tp = (window['High'].values + window['Low'].values + window['Close'].values) / 3
-        return np.sum(v * tp) / (np.sum(v) + epsilon)
-    df['VWAP'] = apply_rolling_df(df, 14, calc_vwap)
+    # ==========================================
+    # 1. 多尺度窗口循环 (Multi-scale)
+    # 建议覆盖：周线逻辑(7)，半月逻辑(14)，月线逻辑(30)
+    # ==========================================
+    windows = [7, 14, 30]
 
-    # --- NEW: 深度成交量特征工程 (无泄露版) ---
+    for w in windows:
+        suffix = f"_{w}"
+        
+        # --- A. 相对成交量 (Stationarity) ---
+        vol_ma = df['Volume'].rolling(window=w).mean()
+        vol_std = df['Volume'].rolling(window=w).std()
 
-    print("Generating Advanced Volume Features (Leakage Free)...")
+        # Vol_Ratio: 当日量 / 均量 (最强特征之一)
+        df[f'Vol_Ratio{suffix}'] = df['Volume'] / (vol_ma + epsilon)
+        
+        # Vol_Z: 标准化成交量
+        df[f'Vol_Z{suffix}'] = (df['Volume'] - vol_ma) / (vol_std + epsilon)
 
-    vol_window = 14
+        # --- B. OBV 衍生特征 (Stationary OBV) ---
+        # 替代你原来的 OBV_14。
+        # 1. OBV Slope: OBV 在窗口 w 内的线性斜率，表示资金流入流出的速率
+        df[f'OBV_Slope{suffix}'] = talib.LINEARREG_SLOPE(obv_raw, timeperiod=w)
+        # 归一化 Slope: 除以成交量均值，消除绝对值膨胀的影响
+        df[f'OBV_Slope_Norm{suffix}'] = df[f'OBV_Slope{suffix}'] / (vol_ma + epsilon)
+
+        # 2. OBV Oscillator: 乖离率 (OBV - MA(OBV)) / MA(OBV) (如果 OBV 有负数，分母不建议用 OBV，改用 vol_ma * 累计系数)
+        # 简单版：OBV 这里的绝对数值没意义，重要的是相对变化。
+        # 我们用 (OBV - MA(OBV)) / (Window * MeanVolume) 来近似归一化
+        obv_ma = talib.SMA(obv_raw, timeperiod=w)
+        df[f'OBV_Osc{suffix}'] = (obv_raw - obv_ma) / (vol_ma * w + epsilon)
+
+        # --- C. 量价动量 (Momentum) ---
+        # Force Index (强力指数)
+        # 原始公式: V * (Close - Prev_Close)
+        fi_raw = df['Volume'] * df['Close'].diff()
+        # 平滑处理
+        fi_ema = talib.EMA(fi_raw.fillna(0), timeperiod=w)
+        # 归一化: 非常重要，否则价格翻倍后 FI 也会翻倍
+        close_ma = df['Close'].rolling(window=w).mean()
+        df[f'Force_Index{suffix}'] = fi_ema / (vol_ma * close_ma + epsilon) * 10000
+
+        # --- D. 资金流向 (Flow) ---
+        # MFI (Money Flow Index) - 自带归一化 (0-100)
+        df[f'MFI{suffix}'] = talib.MFI(df['High'], df['Low'], df['Close'], df['Volume'], timeperiod=w)
+
+        # EOM (Ease of Movement)
+        # pta.eom 返回的是 DataFrame，需要提取
+        eom_res = pta.eom(df['High'], df['Low'], df['Close'], df['Volume'], length=w)
+        if eom_res is not None:
+            # pta 的列名通常是 EOM_14_xxxx，我们直接取第一列重命名
+            df[f'EOM{suffix}'] = eom_res.iloc[:, 0]
+        
+        # --- E. 波动率归一化成交量 ---
+        # 逻辑：在波动率低的时候，少量成交量就能拉升，价值不同
+        # Garman-Klass Volatility (用于归一化)
+        log_hl = np.log(df['High'] / df['Low'])
+        log_co = np.log(df['Close'] / df['Open'])
+        gk_vol = np.sqrt(0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2)
+        # 滚动平均波动率
+        gk_vol_ma = gk_vol.rolling(w).mean()
+        # Vol / Volatility: 如果这个值很高，说明成交量很大但波动很小(吸筹/出货)，或者反之
+        df[f'Vol_to_Volat{suffix}'] = df[f'Vol_Ratio{suffix}'] / (gk_vol_ma * 100 + epsilon)
+
+    # ==========================================
+    # 2. 单一特征 (不需要多尺度或固定窗口)
+    # ==========================================
     
-    # === A. 相对成交量 (Stationarity) ===
-    # 使用 rolling mean/std，严格限制在过去窗口
-    vol_ma = df['Volume'].rolling(window=vol_window).mean()
-    vol_std = df['Volume'].rolling(window=vol_window).std()
-
-    # 1. Vol_Ratio
-    df['Vol_Ratio'] = df['Volume'] / (vol_ma + epsilon)
+    # 距离 VWAP 的距离 (使用之前计算的 VWAP_14 作为基准，或者用更长周期的)
+    # 这里我们保留一个短周期的和一个长周期的
+    df['Dist_VWAP_14'] = (df['Close'] - df['VWAP_14']) / (df['VWAP_14'] + epsilon)
     
-    # 2. Vol_Z_Score
-    df['Vol_Z'] = (df['Volume'] - vol_ma) / (vol_std + epsilon)
-
-    # === B. 方向性成交量 (Directionality) ===
-    price_change = df['Close'].diff()
-    
-    # 3. Signed Volume
-    signed_vol = df['Volume'] * np.sign(price_change)
-    df['Signed_Vol_Norm'] = signed_vol / (vol_ma + epsilon)
-
-    # === C. 量价动量 (Momentum) ===
-    
-    # 4. Force Index (强力指数) - FIXED LEAKAGE
-    fi_raw = df['Volume'] * price_change
-    close_ma = df['Close'].rolling(window=vol_window).mean()
-    
-    # 计算 Force Index 的 EMA，然后除以 (平均成交量 * 平均价格) 进行无量纲化
-    # 这是一个非常安全的相对指标
-    fi_ema = talib.EMA(fi_raw.fillna(0), timeperiod=vol_window)
-    df['Force_Index'] = fi_ema / (vol_ma * close_ma + epsilon) * 10000
-
-    # 5. Volume ROC
+    # 简单 ROC
     df['Vol_ROC'] = df['Volume'].pct_change()
+    
+    # Log Return Volatility (Price Feature, but useful context)
+    df['Log_Ret'] = np.log(df['Close'] / df['Close'].shift(1))
+    df['Price_Vol_14'] = df['Log_Ret'].rolling(14).std()
 
-    # === D. 资金流向 (Flow) ===
-    # TA-Lib 和 Pandas-TA 的这些函数内部都是基于 rolling window 的，安全。
+    # ==========================================
+    # 3. 清理与保存
+    # ==========================================
+    
+    # 删除中间变量 (可选)
+    # del df['VWAP_14'] 
+    
+    # 清理 NaN (由于 Rolling 产生的)
+    # 建议保留 dropna 这一步给最终的数据加载器做，但在特征工程脚本里做也没问题
+    # original_len = len(df)
+    # df = df.dropna()
+    # print(f"Dropped {original_len - len(df)} rows due to rolling windows.")
 
-    # 6. MFI
-    df['MFI'] = talib.MFI(df['High'], df['Low'], df['Close'], df['Volume'], timeperiod=vol_window)
+    # 如果 Index 是 Date，reset_index 存回 CSV (这取决于你的 pipeline 标准)
+    df = df.reset_index()
 
-    # 7. CMF
-    df['CMF'] = df.ta.cmf(length=20)
-
-    # 8. EOM
-    df['EOM'] = df.ta.eom(length=14)
-
-    df['rvol'] = df['Volume'] / df['Volume'].rolling(20).mean()
-
-    # === E. 相对位置指标 ===
-
-    # 9. Dist_VWAP
-    # VWAP 之前是 rolling 算出来的，Close 是当前的，安全。
-    df['Dist_VWAP'] = (df['Close'] - df['VWAP']) / (df['VWAP'] + epsilon)
-
-    df['rvol'] = df['Volume'] / df['Volume'].rolling(20).mean()
-    log_hl = np.log(df['High'] / df['Low'])
-    log_co = np.log(df['Close'] / df['Open'])
-    df['gk_vol'] = np.sqrt(0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2)
-
-    # --- 其他已有特征 ---
-    # Bitbo Sharpe Ratio (Rolling 365 -> Safe)
-    rolling_returns = df['Log_Return'].rolling(window=365)
-    annualized_return = rolling_returns.mean() * 365
-    annualized_volatility = rolling_returns.std() * np.sqrt(365)
-    df['sharpe_ratio'] = annualized_return / (annualized_volatility + epsilon)
-
-    # Save
-    df.to_csv(filename)
-    print(f"Successfully added LEAKAGE-FREE advanced volume features to {filename}")
+    df.to_csv(filename, index=False)
+    print(f"Successfully added features to {filename}")
+    print(f"Features added for windows: {windows}")
 
 if __name__ == "__main__":
     main()
