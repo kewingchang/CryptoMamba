@@ -133,6 +133,7 @@ def main():
     # Log Return Volatility (Price Feature, but useful context)
     df['Log_Ret'] = np.log(df['Close'] / df['Close'].shift(1))
     df['Price_Vol_14'] = df['Log_Ret'].rolling(14).std()
+    df['Log_Volume'] = np.log(df['Volume'] + 1)
 
     # ==========================================
     # 3. 清理与保存
