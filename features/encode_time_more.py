@@ -105,40 +105,6 @@ def get_weekend_phase(dt):
 df['weekend_phase'] = df['Date'].apply(get_weekend_phase)
 
 
-# ==========================================
-# 3. 减半周期特征 (Bitcoin Halving)
-# ==========================================
-print("Generating Halving Cycle features...")
-halving_dates = pd.to_datetime([
-    '2012-11-28', '2016-07-09', '2020-05-11', '2024-04-20', '2028-03-31'
-])
-
-# Current Halving Status
-df['last_halving'] = df['Date'].apply(lambda x: halving_dates[halving_dates <= x].max())
-df['next_halving'] = df['Date'].apply(lambda x: halving_dates[halving_dates >= x].min())
-
-df['days_since_last_halving'] = (df['Date'] - df['last_halving']).dt.days
-df['days_before_next_halving'] = (df['next_halving'] - df['Date']).dt.days
-
-# [平移] 明天的减半状态
-# 逻辑：明天比今天距离下一次减半少1天，距离上一次多1天
-df['next_days_since_last'] = df['days_since_last_halving'] + 1
-df['next_days_before_next'] = df['days_before_next_halving'] - 1
-
-# 减半周期编码 (Current)
-period_halving = 1460.0
-df['halving_pos_sin'] = np.sin(2 * np.pi * df['days_since_last_halving'] / period_halving)
-df['halving_pos_cos'] = np.cos(2 * np.pi * df['days_since_last_halving'] / period_halving)
-
-# [平移] 减半周期编码 (Next Day)
-# 告诉模型：明天我们在四年周期中的位置
-df['next_halving_pos_sin'] = np.sin(2 * np.pi * df['next_days_since_last'] / period_halving)
-df['next_halving_pos_cos'] = np.cos(2 * np.pi * df['next_days_since_last'] / period_halving)
-
-# 倒计时特征
-df['halving_countdown_30'] = (df['days_before_next_halving'] <= 30).astype(int)
-
-
 # 多尺度月份编码 (保留你的逻辑)
 month_scales = [3, 6]
 for p in month_scales:
@@ -161,8 +127,6 @@ df['next_wd_angle'] = np.arctan2(df['next_wd_sin'], df['next_wd_cos'])
 df['next_yr_angle'] = np.arctan2(df['next_day_sin'], df['next_day_cos'])
 df['next_mn_angle'] = np.arctan2(df['next_month_sin'], df['next_month_cos'])
 # others
-df['halving_pos_angle'] = np.arctan2(df['halving_pos_sin'], df['halving_pos_cos'])
-df['next_halving_pos_angle'] = np.arctan2(df['next_halving_pos_sin'], df['next_halving_pos_cos'])
 df['month_3_angle'] = np.arctan2(df['month_sin_3'], df['month_cos_3'])
 df['next_month_3_angle'] = np.arctan2(df['next_month_sin_3'], df['next_month_cos_3'])
 df['month_6_angle'] = np.arctan2(df['month_sin_6'], df['month_cos_6'])
@@ -177,8 +141,6 @@ df['yr_angle_norm'] = np.arctan2(df['day_sin'], df['day_cos']) / np.pi
 # ==========================================
 # Drop helper columns if needed, but usually keeping them is fine for debug.
 # Dropping the date object columns created for calculation to keep CSV clean-ish
-cols_to_drop = ['last_halving', 'next_halving'] 
-df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
 
 # Save
 df.to_csv(args.filename, index=False)

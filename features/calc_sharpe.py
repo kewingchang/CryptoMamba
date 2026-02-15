@@ -1,69 +1,59 @@
 import argparse
 import pandas as pd
 import numpy as np
-
+import sys
 
 def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Calculate technical indicators and update CSV file.")
-    parser.add_argument('--filename', type=str, required=True, help="The CSV filename to process.")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--filename', type=str, required=True)
     args = parser.parse_args()
 
-    filename = args.filename
+    try:
+        df = pd.read_csv(args.filename)
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    
+    # 确保 Date 存在且格式正确
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df.sort_values('Date')
+    
+    # 转换为数值
+    cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+    for c in cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors='coerce')
 
-    # Read the CSV file
-    df = pd.read_csv(filename, parse_dates=['Date'])
-
-    # Set index to Date and sort
-    df = df.set_index('Date')
-    df = df.sort_index()
-
-    # Ensure required columns exist
-    required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column: {col}")
-
-    # Convert columns to float
-    df['Open'] = df['Open'].astype(np.float64)
-    df['High'] = df['High'].astype(np.float64)
-    df['Low'] = df['Low'].astype(np.float64)
-    df['Close'] = df['Close'].astype(np.float64)
-    df['Volume'] = df['Volume'].astype(np.float64)
-
-    # 2. 计算每日收益率 (Daily Return)
+    # 计算收益率
     df['Return'] = df['Close'].pct_change()
 
-    # 3. 设定参数
-    # Bitbo 使用 "Rolling 52 Week"，即 1 年。加密货币市场全年无休，通常取 365 天。
-    window_size = 364
-
-    # 设定无风险利率 (Risk Free Rate, Rf)
-    # 如果假设 Rf 为 0 (最常见且简单的做法)
+    # 滚动窗口：通常夏普看 30天，90天或 1年
+    # Bitbo 可能用 1年，但对于特征工程，增加多尺度更好
+    windows = [30, 90, 365]
+    
     rf_annual = 0.0
+    rf_daily = rf_annual / 365.0
 
-    # 如果你想更严谨，可以使用例如 4% 的年化国债收益率
-    # rf_annual = 0.01
+    for w in windows:
+        if len(df) < w:
+            continue
+        
+        roll_mean = df['Return'].rolling(window=w).mean()
+        roll_std = df['Return'].rolling(window=w).std()
+        
+        # 防止除以0
+        roll_std = roll_std.replace(0, np.nan)
+        
+        # 年化夏普
+        df[f'Sharpe_{w}d'] = (roll_mean - rf_daily) / roll_std * np.sqrt(365)
 
-    # 将年化无风险利率转换为日化
-    rf_daily = rf_annual / 365
-
-    # 4. 计算滚动夏普比率
-    # 公式：(平均日收益率 - 日无风险利率) / 日收益率标准差 * sqrt(365)
-
-    # 计算滚动平均收益 (Rolling Mean)
-    rolling_mean = df['Return'].rolling(window=window_size).mean()
-
-    # 计算滚动标准差 (Rolling Std Dev)
-    rolling_std = df['Return'].rolling(window=window_size).std()
-
-    # 应用夏普比率公式
-    # 注意：np.sqrt(365) 是年化因子
-    df['Bitbo_Sharpe'] = (rolling_mean - rf_daily) / rolling_std * np.sqrt(365)
-
-    # Save
-    df.to_csv(filename)
-    print(f"Successfully added LEAKAGE-FREE advanced volume features to {filename}")
+    # 清理计算产生的 NaN
+    # df = df.dropna()
+    
+    # 保存时保持 CSV 格式一致性 (Date 不做 index)
+    df.to_csv(args.filename, index=False)
+    print(f"Added Sharpe Ratios to {args.filename}")
 
 if __name__ == "__main__":
     main()

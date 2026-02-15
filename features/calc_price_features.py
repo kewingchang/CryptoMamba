@@ -77,7 +77,7 @@ def engineer_features(df):
     if 'marketCap' in df.columns:
         # MarketCap_Chg: 市值变化率
         # 通常这跟 Close_Chg 99% 相关，但还是算一下
-        df['PF_MCap_Chg'] = df['marketCap'].pct_change(fill_method=None)
+        df['PF_MCap_Chg'] = df['marketCap'].pct_change()
         
         # 既然有了变化率，原始的绝对值 marketCap 就可以（也建议）在训练时丢弃了
         # 但我们这里只负责加特征，不删原数据
@@ -94,10 +94,6 @@ def clean_and_save(df, filepath):
     # 简单策略：填充0 或者 删除第一行。
     # 对于时间序列训练，删除第一行是最安全的
     
-    # original_len = len(df)
-    # df.dropna(inplace=True)
-    # print(f"      -> Dropped {original_len - len(df)} rows (First row usually).")
-
     print(f"[4/4] Saving to {filepath}...")
     # 覆盖保存
     df.to_csv(filepath, index=False)
