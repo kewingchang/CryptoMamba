@@ -228,6 +228,7 @@ def main():
 
     # Parabolic SAR (acceleration=0.02, maximum=0.2): Dynamic trend reversal indicator
     df['PSAR'] = talib.SAR(high, low, acceleration=0.02, maximum=0.2)
+    df['Dist_PSAR'] = (close - df['PSAR']) / close
     
     # MAVP
     periods = np.nan_to_num(df['HT_DCPERIOD'], nan=14).clip(2, 30).astype(np.float64)
@@ -295,10 +296,19 @@ def main():
     df = df.copy()
 
     print("Step 5: Adding Pandas TA features...")
-    # SuperTrend
+    # SuperTrend 计算
     st = pta.supertrend(df['High'], df['Low'], df['Close'], length=14, multiplier=3.0)
     if st is not None:
-        df = pd.concat([df, st], axis=1)
+        # st 包含 4 列: SUPERT_14_3.0, SUPERTd_14_3.0, SUPERTl_14_3.0, SUPERTs_14_3.0
+        # 我们只需要 连续值(SUPERT) 和 方向(SUPERTd)
+        # l 和 s 是这种不连续的，直接不要，或者合并后 drop
+        cols_to_keep = [c for c in st.columns if c.startswith('SUPERT_') or c.startswith('SUPERTd_')]
+        df = pd.concat([df, st[cols_to_keep]], axis=1)
+        
+        # 构造平稳特征
+        supert_col = f'SUPERT_14_3.0' # 确保列名匹配
+        if supert_col in df.columns:
+            df['Dist_SuperTrend'] = (df['Close'] - df[supert_col]) / (df['Close'] + epsilon)
 
     # pandas_ta indicators (select useful ones)
     # Ichimoku Cloud
@@ -336,12 +346,13 @@ def main():
     
     # 定义必须删除的累积型指标关键词 (只删这几个)
     # 这些指标的值随时间无限增长，必须清洗
+    # trend_psar_up, trend_psar_down: 存在大量NaN
     cumulative_cols_to_drop = []
     
     # 精确列表
     cumulative_list = [
         'volume_obv', 'volume_nvi', 'volume_pvi', 'volume_adi', 
-        'trend_ad' # ta库生成的累积AD线
+        'trend_ad', 'trend_psar_up', 'trend_psar_down'
     ]
 
     for col in df.columns:
