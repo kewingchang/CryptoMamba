@@ -352,7 +352,7 @@ def main():
     # 精确列表
     cumulative_list = [
         'volume_obv', 'volume_nvi', 'volume_pvi', 'volume_adi', 
-        'trend_ad', 'trend_psar_up', 'trend_psar_down'
+        'trend_ad', 'trend_psar_up', 'trend_psar_down', 'others_cr', 'volume_vpt'
     ]
 
     for col in df.columns:
